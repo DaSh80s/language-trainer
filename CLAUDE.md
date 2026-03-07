@@ -52,3 +52,26 @@ All app logic is in `src/App.jsx`. Key sections:
 - API credits are separate from Claude Pro subscription
 - Credits and monthly spend limit managed at: platform.claude.com/settings/limits
 - Current model used: `claude-haiku-4-5-20251001`
+
+---
+
+## Working with Claude Code (Tips for Future Sessions)
+
+Claude has a **Chrome extension** that lets it see and control the browser directly — no need to take manual screenshots or navigate pages yourself. To get the most out of this:
+
+### ✅ DO
+- **Use Chrome** (not Safari) for any admin tasks — Vercel, GitHub, Anthropic Console
+- **Let Claude open pages** — just say "go to the Vercel dashboard" and Claude will navigate there itself
+- **Stay in the Chrome tab Claude is using** — Claude controls one specific tab; use that same tab for everything
+- **Just describe what you want** — e.g. "change the app title" or "add Spanish as a language option" — Claude knows the project from this file
+
+### ❌ DON'T
+- Don't navigate to pages yourself in a separate window and then share a screenshot — Claude can do this directly
+- Don't use Safari for admin pages — Claude can't control Safari, only Chrome
+- Don't worry about remembering technical steps — that's what this file is for
+
+### Starting a New Session
+1. Open Claude Code (claude.ai or the desktop app)
+2. Make sure the Chrome extension is active (the Claude icon should be visible in Chrome's toolbar)
+3. Simply describe what you want to change — Claude will read this file and know exactly what to do
+4. Claude will edit the code, push to GitHub, and Vercel will auto-deploy within ~30 seconds
