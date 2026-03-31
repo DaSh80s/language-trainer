@@ -1,6 +1,55 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, BookOpen, MessageSquare, GraduationCap, Trash2, RotateCcw, TrendingUp, Award, Volume2, Download, Brain, Zap, Target, Calendar, RefreshCw, AlertCircle } from 'lucide-react';
 
+// ── Password Gate ─────────────────────────────────────────────────────────────
+
+function PasswordGate({ children }) {
+  const required = import.meta.env.VITE_APP_PASSWORD
+  const [authed, setAuthed] = useState(() => !required || localStorage.getItem('lt_auth') === required)
+  const [input, setInput] = useState('')
+  const [err, setErr] = useState(false)
+
+  if (authed) return children
+
+  function attempt() {
+    if (input === required) {
+      localStorage.setItem('lt_auth', required)
+      setAuthed(true)
+    } else {
+      setErr(true)
+      setInput('')
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm border border-gray-100">
+        <div className="text-center mb-6">
+          <div className="text-4xl mb-3">🌍</div>
+          <h1 className="text-xl font-bold text-gray-800">Language Trainer</h1>
+          <p className="text-sm text-gray-500 mt-1">AI-powered language practice</p>
+        </div>
+        <input
+          type="password"
+          value={input}
+          onChange={e => { setInput(e.target.value); setErr(false) }}
+          onKeyDown={e => e.key === 'Enter' && attempt()}
+          placeholder="Password"
+          className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 mb-3"
+          autoFocus
+        />
+        {err && <p className="text-red-500 text-xs mb-3 text-center">Incorrect password</p>}
+        <button
+          onClick={attempt}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors"
+        >
+          Enter
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function LanguagePracticeApp() {
   // Core state
   const [selectedLanguage, setSelectedLanguage] = useState('German');
@@ -496,6 +545,7 @@ Format:
   const topics = ['general', 'business', 'travel', 'culture', 'technology', 'food', 'sports', 'health', 'education', 'entertainment'];
 
   return (
+    <PasswordGate>
     <div className={`min-h-screen p-4 ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'}`}>
       <div className="max-w-7xl mx-auto">
         {/* Header */}
@@ -920,5 +970,6 @@ Format:
         )}
       </div>
     </div>
+    </PasswordGate>
   );
 }
