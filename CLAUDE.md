@@ -2,6 +2,14 @@
 
 An AI-powered language practice app built with React + Vite, deployed on Vercel, backed up on GitHub.
 
+## Current Status
+_Update this section at the end of each session so any device can pick up where you left off._
+
+- **App state:** Live and working at https://language-trainer-kappa.vercel.app
+- **Last worked on:** Cross-device Claude Code sync setup (2025-05-04)
+- **In progress:** Nothing — app is stable
+- **Next ideas:** _(add things here as you think of them)_
+
 ## Live URL
 https://language-trainer-kappa.vercel.app
 
