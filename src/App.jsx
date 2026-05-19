@@ -234,6 +234,25 @@ Keep it SHORT and snappy. Use emojis.`,
       
       'pronunciation': `Pronunciation for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give words with IPA, explain sounds BRIEFLY, practice. Use emojis 🗣️`,
       
+      'articles': `Article gender trainer for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext}
+
+Rules for this game:
+- Give ONE noun (NO article, just the bare noun) per turn
+- Wait for the user to type only the article (e.g. "der", "die", "das", "el", "la", "le", "la", "un", "une", etc.)
+- If CORRECT: ✅ confirm, then give a SHORT memory tip or rule explaining WHY (e.g. "💡 Tip: Nouns ending in -chen are always neuter in German → das")
+- If WRONG: ❌ show the correct article, explain the rule, give 1-2 similar example nouns that follow the same pattern
+- Keep a running score (X correct out of Y) shown after each answer
+- After every 5 nouns, give a summary of any patterns/rules covered
+- Choose nouns that illustrate useful, learnable rules — not purely random. Mix easy patterns with harder exceptions.
+- Language-specific tips to use:
+  German: -chen/-lein=das, -ung/-heit/-keit/-schaft/-ion=die, -er/-ling/-ismus (most)=der, compound nouns take the article of the last word
+  Spanish: -a/-ión/-dad/-tad/-umbre=la, -o/-or/-aje=el, exceptions like el agua/la mano
+  French: -tion/-sion/-té/-ée=féminine, -eau/-isme/-age (most)=masculin
+  Italian: -a=la, -o=il, -ione=la, -ore=il
+  Hebrew: most nouns ending in ה or ת are feminine
+
+Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
+
       'weakAreas': `Target weak areas in ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Focus on errors. SHORT exercises. Use emojis 🎯`
     };
     
@@ -409,6 +428,7 @@ Keep it SHORT and snappy. Use emojis.`,
         'translation': 'Give me translation exercises.',
         'listening': 'Give me a listening exercise.',
         'pronunciation': 'Help me with pronunciation.',
+        'articles': 'Start the article gender game. Give me the first noun.',
         'weakAreas': 'Focus on my weak areas.'
       };
       
@@ -538,6 +558,7 @@ Format:
     { id: 'grammar', name: 'Grammar', icon: GraduationCap },
     { id: 'vocabulary', name: 'Vocabulary', icon: BookOpen },
     { id: 'translation', name: 'Translation', icon: RefreshCw },
+    { id: 'articles', name: 'Article Gender', icon: Brain },
     { id: 'listening', name: 'Listening', icon: Volume2 },
     { id: 'pronunciation', name: 'Pronunciation', icon: Volume2 },
     { id: 'weakAreas', name: 'Weak Areas', icon: Target }
