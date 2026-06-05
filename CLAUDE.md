@@ -95,3 +95,14 @@ Claude has a **Chrome extension** that lets it see and control the browser direc
 2. Make sure the Chrome extension is active (the Claude icon should be visible in Chrome's toolbar)
 3. Simply describe what you want to change — Claude will read this file and know exactly what to do
 4. Claude will edit the code, push to GitHub, and Vercel will auto-deploy within ~30 seconds
+
+---
+
+## Documentation Protocol (Claude must follow this)
+
+**After every session where changes are made:**
+1. Update the **Current Status** section at the top — what was done, today's date
+2. Update the **Practice Modes** table if any modes were added or changed
+3. Commit all changes (code + docs together) and push to GitHub
+
+GitHub is the **single source of truth**. Every session should end with a clean `git status` and everything pushed. A Stop hook auto-commits any files that were missed, but Claude should do it explicitly at end of session so commit messages are meaningful.

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"/Users/danielshalom/Documents/AI Projects/Claude/Language Trainer\" && git add CLAUDE.md src/ api/ package.json package-lock.json 2>/dev/null; git diff --cached --quiet || (git commit -m \"Auto-save: session changes\" && git push) 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Saving changes to GitHub..."
+          }
+        ]
+      }
+    ]
+  }
+}
