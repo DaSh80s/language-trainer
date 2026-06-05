@@ -6,9 +6,21 @@ An AI-powered language practice app built with React + Vite, deployed on Vercel,
 _Update this section at the end of each session so any device can pick up where you left off._
 
 - **App state:** Live and working at https://language-trainer-kappa.vercel.app
-- **Last worked on:** Cross-device Claude Code sync setup (2025-05-04)
+- **Last worked on:** Added Article Gender practice mode (2026-06-05)
 - **In progress:** Nothing — app is stable
 - **Next ideas:** _(add things here as you think of them)_
+
+## Practice Modes
+| Mode | Description |
+|---|---|
+| Conversation | Free chat in the target language |
+| Grammar | Translate English sentences; drill on mistakes |
+| Vocabulary | Learn 5 new words with IPA + examples |
+| Translation | Bidirectional translation drills |
+| **Article Gender** | App gives a bare noun → user types the article; tips & rules provided |
+| Listening | Scenario-based comprehension questions |
+| Pronunciation | IPA breakdowns and sound practice |
+| Weak Areas | Targeted practice based on logged errors |
 
 ## Live URL
 https://language-trainer-kappa.vercel.app
