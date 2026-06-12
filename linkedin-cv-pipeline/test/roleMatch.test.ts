@@ -1,26 +1,47 @@
 import { describe, expect, it } from 'vitest';
-import { extractJobTitle, matchOpportunity, titleSimilarity } from '../src/core/roleMatch.js';
+import { extractRoleHints, matchOpportunity, titleSimilarity } from '../src/core/roleMatch.js';
+import type { Opportunity } from '../src/types.js';
 import { OPPORTUNITIES } from './stubs.js';
 
-describe('extractJobTitle', () => {
-  it('extracts from the standard LinkedIn subject', () => {
-    expect(extractJobTitle('New application: Senior Backend Engineer from Maya Cohen', '')).toBe(
-      'Senior Backend Engineer',
+describe('extractRoleHints (locked against real jobs-listings@linkedin.com mail)', () => {
+  it('parses the real subject format with embedded client ref', () => {
+    const hints = extractRoleHints(
+      'New application: TEMOS Business Analyst (rfx1560984) from Polina Zemlicka Ulendeeva',
+      '',
     );
+    expect(hints.title).toBe('TEMOS Business Analyst (rfx1560984)');
+    expect(hints.clientRef).toBe('rfx1560984');
   });
 
-  it('extracts from the "for" subject variant', () => {
-    expect(extractJobTitle('New application for: Product Manager from Avi Levi', '')).toBe('Product Manager');
+  it('survives the double-space variant seen in real mail', () => {
+    const hints = extractRoleHints(
+      'New application: Identity & Access Management Specialist  from Akhil Sikka',
+      '',
+    );
+    expect(hints.title).toBe('Identity & Access Management Specialist');
+    expect(hints.clientRef).toBeNull();
   });
 
-  it('falls back to the body when the subject is unhelpful', () => {
-    expect(extractJobTitle('You have a new applicant', 'Avi Levi applied to your job: Data Analyst.')).toBe(
+  it('parses a plain subject without a ref', () => {
+    expect(extractRoleHints('New application: Data Analyst from Mohamed Achraf Khemakhem', '').title).toBe(
       'Data Analyst',
     );
   });
 
-  it('returns null when nothing matches', () => {
-    expect(extractJobTitle('Weekly digest', 'Here is your hiring summary.')).toBeNull();
+  it('falls back to the "{title} at {company} · {location}" body line', () => {
+    const hints = extractRoleHints(
+      'Your job has a new applicant',
+      'TEMOS Business Analyst (rfx1560984) at Rigby AG · Zurich, Switzerland',
+    );
+    expect(hints.title).toBe('TEMOS Business Analyst (rfx1560984)');
+    expect(hints.clientRef).toBe('rfx1560984');
+  });
+
+  it('returns nulls when nothing matches', () => {
+    expect(extractRoleHints('Weekly digest', 'Here is your hiring summary.')).toEqual({
+      title: null,
+      clientRef: null,
+    });
   });
 });
 
@@ -35,13 +56,33 @@ describe('titleSimilarity', () => {
 });
 
 describe('matchOpportunity', () => {
-  it('picks the best opportunity above the threshold', () => {
-    expect(matchOpportunity('Senior Backend Engineer', OPPORTUNITIES)?.id).toBe('opp-backend');
-    expect(matchOpportunity('Data Analyst', OPPORTUNITIES)?.id).toBe('opp-data');
+  const luxOpp: Opportunity = {
+    id: 'opp-lux',
+    title: 'LUX - Senior Data Engineer SQL (rfx1557530)',
+    jobDescription: 'SQL, Data Vault.',
+    clientRef: 'rfx1557530',
+  };
+
+  it('matches by client ref before anything else, even when titles diverge', () => {
+    const hints = extractRoleHints('New application: Data Engineer (rfx1557530) from Jane Doe', '');
+    expect(matchOpportunity(hints, [...OPPORTUNITIES, luxOpp])?.id).toBe('opp-lux');
   });
 
-  it('returns null below the threshold or without a title', () => {
-    expect(matchOpportunity('Chief Astrology Officer', OPPORTUNITIES)).toBeNull();
-    expect(matchOpportunity(null, OPPORTUNITIES)).toBeNull();
+  it('matches by ref embedded in the opportunity title when Client ref. no. is empty', () => {
+    const noRef = { ...luxOpp, clientRef: undefined };
+    const hints = extractRoleHints('New application: Anything (rfx1557530) from Jane Doe', '');
+    expect(matchOpportunity(hints, [noRef])?.id).toBe('opp-lux');
+  });
+
+  it('falls back to fuzzy title match above the threshold', () => {
+    const hints = extractRoleHints('New application: Senior Backend Engineer from Maya Cohen', '');
+    expect(matchOpportunity(hints, OPPORTUNITIES)?.id).toBe('opp-backend');
+  });
+
+  it('returns null below the threshold or without hints', () => {
+    expect(
+      matchOpportunity(extractRoleHints('New application: Chief Astrology Officer from X Y', ''), OPPORTUNITIES),
+    ).toBeNull();
+    expect(matchOpportunity({ title: null, clientRef: null }, OPPORTUNITIES)).toBeNull();
   });
 });

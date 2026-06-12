@@ -1,5 +1,5 @@
 import { withRetry } from './core/retry.js';
-import { extractJobTitle, matchOpportunity } from './core/roleMatch.js';
+import { extractRoleHints, matchOpportunity } from './core/roleMatch.js';
 import {
   LINKEDIN_APPLICANT_TAG,
   type ApplicationEmail,
@@ -48,8 +48,8 @@ export async function runPipeline(deps: PipelineDeps): Promise<RunSummary> {
       const profile = await withRetry(() => deps.analyzer.parseCv(attachment), deps.retry);
       summary.parsed++;
 
-      const title = extractJobTitle(email.subject, email.bodyPreview);
-      const opportunity = matchOpportunity(title, opportunities);
+      const hints = extractRoleHints(email.subject, email.bodyPreview);
+      const opportunity = matchOpportunity(hints, opportunities);
 
       const record: CandidateRecord = {
         profile,
@@ -65,7 +65,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<RunSummary> {
         summary.unsorted++;
         await deps.alerts.error(
           'unmapped role — written as Unsorted',
-          { messageId: email.id, subject: email.subject, extractedTitle: title },
+          { messageId: email.id, subject: email.subject, extracted: hints },
         );
       }
 

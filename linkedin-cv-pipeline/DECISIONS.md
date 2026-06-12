@@ -110,3 +110,27 @@ right home for the tag; trivially changeable in `notionSchema.ts`.
 - Dedupe checks `Email` only, not `Email 2`.
 - Relation merge carries over the relation ids returned by the page read; if a contact
   ever had >25 role relations the list could truncate. Not realistic for applicants.
+
+## D11 — Email format verified; client-ref-first role matching (2026-06-12)
+
+**Decision:** Patterns locked against a real LinkedIn Recruiter application email
+(template `email_ent_job_post_new_applicant`, sender **jobs-listings@linkedin.com**):
+subject `New application: {Job Title} from {Candidate Name}`, body line
+`{Job Title} at {Company} · {Location}`, CV attached as PDF. Ad titles often embed the
+client ref `(rfxNNNNNNN)`, which equals the opportunity's `Client ref. no.` and appears
+in its Notion title — so matching is **rfx exact match first**, token-similarity fuzzy
+title second, Unsorted third. The candidate's email address only exists inside the CV,
+confirming parse-CV-before-dedupe (D4).
+**Why:** An exact ref is deterministic; fuzzy matching only carries ads without a ref.
+**Shared mailbox:** `linkedinapplications@rigby.ch` (provided by Dan, 2026-06-12).
+
+## D12 — Graph access: app-only token, category as processed-marker (2026-06-12)
+
+**Decision:** Client-credentials flow (`Mail.ReadWrite` application permission, ideally
+scoped to the shared mailbox via an application access policy). Fetch = messages from
+jobs-listings@linkedin.com with attachments in a 14-day lookback window; processed
+messages carry the `cv-pipeline-processed` category (appended, preserving existing
+categories, + mark read) so mail stays visible in the inbox. Graph can't filter on
+categories server-side → filtered client-side within the window.
+**Alternative rejected:** Moving processed mail to a subfolder — invisible mail surprises
+humans; deleting is irreversible.

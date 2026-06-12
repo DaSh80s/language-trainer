@@ -8,3 +8,8 @@ compatibility_date = "2026-06-01"
 
 [triggers]
 crons = ["*/5 * * * *"]
+
+[vars]
+MAILBOX_ADDRESS = "linkedinapplications@rigby.ch"
+NOTION_CONTACTS_DB_ID = "3f64f533d5dd4ea8a1263607204a806a"
+NOTION_OPPORTUNITIES_DB_ID = "f48d478f19c646e8aa0f17020d4495c2"

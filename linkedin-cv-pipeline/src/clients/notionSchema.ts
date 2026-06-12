@@ -35,6 +35,7 @@ export const OPPORTUNITY_PROPS = {
   jobDescription: 'Orig JD text',
   jobId: 'Job ID',
   stage: 'Stage',
+  clientRef: 'Client ref. no.',
 } as const;
 
 /** Existing select option in `Sourced from` — reused, not invented. */
@@ -88,10 +89,12 @@ export function parseOpportunityPage(page: NotionPage): Opportunity | null {
   if (stage && TERMINAL_STAGES.has(stage)) return null;
   const title = plain(page.properties[OPPORTUNITY_PROPS.title]?.title);
   if (!title) return null;
+  const clientRef = plain(page.properties[OPPORTUNITY_PROPS.clientRef]?.rich_text).trim();
   return {
     id: page.id,
     title,
     jobDescription: plain(page.properties[OPPORTUNITY_PROPS.jobDescription]?.rich_text),
+    ...(clientRef ? { clientRef } : {}),
   };
 }
 

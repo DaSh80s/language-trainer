@@ -1,31 +1,56 @@
 import type { Opportunity } from '../types.js';
 
 /**
- * Patterns observed in LinkedIn Recruiter notification subjects/bodies.
- * PROVISIONAL until locked against real sample emails in Milestone 3 (SPEC).
+ * Extraction patterns locked against real LinkedIn Recruiter mail on 2026-06-12
+ * (sender jobs-listings@linkedin.com, template email_ent_job_post_new_applicant):
+ *   Subject: "New application: TEMOS Business Analyst (rfx1560984) from Polina …"
+ *   Body:    "Your job has a new applicant" / "{title} at Rigby AG · Zurich, …"
+ * Job titles often embed the client ref "(rfxNNNNNNN)", which also lives in the
+ * opportunity's title and `Client ref. no.` — an exact-match signal that takes
+ * priority over fuzzy title matching (DECISIONS D11).
  */
 const SUBJECT_PATTERNS = [
   /new application(?:\s+for)?:?\s*(.+?)\s+from\s+.+$/i,
-  /(?:your job post|application for)\s*[:"]?\s*(.+?)["']?\s*(?:from|received|-)\s/i,
   /(.+?)\s*[-–—]\s*new applicant/i,
 ];
 
-const BODY_PATTERNS = [/applied (?:to|for)(?: your)?(?: job)?[:\s]+["']?(.+?)["']?(?:\.|,|\n|$)/i];
+const BODY_PATTERNS = [
+  /applied (?:to|for)(?: your)?(?: job)?[:\s]+["']?(.+?)["']?(?:\.|,|\n|$)/i,
+  /^\s*(.+?)\s+at\s+.+?\s·\s/m, // "{title} at {company} · {location}"
+];
 
-export function extractJobTitle(subject: string, body: string): string | null {
+const CLIENT_REF = /\brfx\s?(\d{4,})\b/i;
+
+export interface RoleHints {
+  title: string | null;
+  /** Normalized client ref, e.g. "rfx1560984". */
+  clientRef: string | null;
+}
+
+export function extractRoleHints(subject: string, body: string): RoleHints {
+  let title: string | null = null;
   for (const p of SUBJECT_PATTERNS) {
     const m = subject.match(p);
-    if (m?.[1]) return m[1].trim();
+    if (m?.[1]) {
+      title = m[1].replace(/\s+/g, ' ').trim();
+      break;
+    }
   }
-  for (const p of BODY_PATTERNS) {
-    const m = body.match(p);
-    if (m?.[1]) return m[1].trim();
+  if (!title) {
+    for (const p of BODY_PATTERNS) {
+      const m = body.match(p);
+      if (m?.[1]) {
+        title = m[1].replace(/\s+/g, ' ').trim();
+        break;
+      }
+    }
   }
-  return null;
+  const refMatch = subject.match(CLIENT_REF) ?? body.match(CLIENT_REF) ?? (title?.match(CLIENT_REF) ?? null);
+  return { title, clientRef: refMatch ? `rfx${refMatch[1]}` : null };
 }
 
 /** Noise tokens that appear in ad titles but carry no role signal. */
-const STOPWORDS = new Set(['m', 'f', 'd', 'w', 'x', 'remote', 'hybrid', 'onsite', 'the', 'a', 'an', 'and', '&']);
+const STOPWORDS = new Set(['m', 'f', 'd', 'w', 'x', 'remote', 'hybrid', 'onsite', 'the', 'a', 'an', 'and', '&', '100']);
 
 function tokenize(title: string): Set<string> {
   return new Set(
@@ -50,16 +75,25 @@ export function titleSimilarity(a: string, b: string): number {
 
 export const MATCH_THRESHOLD = 0.5;
 
-/** Best opportunity whose title clears the confidence threshold, else null (→ Unsorted). */
-export function matchOpportunity(
-  extractedTitle: string | null,
-  opportunities: Opportunity[],
-): Opportunity | null {
-  if (!extractedTitle) return null;
+function hasClientRef(opp: Opportunity, ref: string): boolean {
+  if (opp.clientRef && opp.clientRef.toLowerCase().replace(/\s+/g, '') === ref) return true;
+  return opp.title.toLowerCase().replace(/\s+/g, '').includes(ref);
+}
+
+/**
+ * Client-ref exact match first; token-similarity fallback above the confidence
+ * threshold; otherwise null → Unsorted (D5).
+ */
+export function matchOpportunity(hints: RoleHints, opportunities: Opportunity[]): Opportunity | null {
+  if (hints.clientRef) {
+    const exact = opportunities.find((o) => hasClientRef(o, hints.clientRef!));
+    if (exact) return exact;
+  }
+  if (!hints.title) return null;
   let best: Opportunity | null = null;
   let bestScore = 0;
   for (const opp of opportunities) {
-    const score = titleSimilarity(extractedTitle, opp.title);
+    const score = titleSimilarity(hints.title, opp.title);
     if (score > bestScore) {
       best = opp;
       bestScore = score;

@@ -40,6 +40,8 @@ export interface Opportunity {
   id: string;
   title: string;
   jobDescription: string;
+  /** Client reference (e.g. "rfx1557530") — exact-match signal for role mapping. */
+  clientRef?: string;
 }
 
 export const LINKEDIN_APPLICANT_TAG = 'LinkedIn applicant';
