@@ -1,0 +1,9 @@
+# Deploy config — activated in Milestone 4. Secrets are set via `wrangler secret put`,
+# never committed: GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GROQ_API_KEY,
+# NOTION_TOKEN, SLACK_WEBHOOK_URL, plus MAILBOX_ADDRESS / NOTION_*_DB_ID as vars.
+name = "linkedin-cv-pipeline"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
