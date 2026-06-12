@@ -81,7 +81,7 @@ export class NotionCandidateStore implements CandidateStore {
       );
       for (const result of page.results) {
         const opp = parseOpportunityPage(result);
-        if (!opp) continue; // terminal stage or untitled
+        if (!opp) continue; // untitled
         opportunities.push(opp);
         const ref = opportunityJobRef(result);
         if (ref) this.jobRefs.set(opp.id, ref);
@@ -89,6 +89,23 @@ export class NotionCandidateStore implements CandidateStore {
       cursor = page.has_more ? page.next_cursor : null;
     } while (cursor);
     return opportunities;
+  }
+
+  /** Client page id → title, cached per Worker instance for affinity notes. */
+  private readonly clientNames = new Map<string, string>();
+
+  async resolveClientNames(clientIds: string[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    for (const id of [...new Set(clientIds)]) {
+      if (!this.clientNames.has(id)) {
+        const page = await this.request<NotionPage>('GET', `/pages/${id}`);
+        const titleProp = Object.values(page.properties).find((p) => p.title !== undefined);
+        const name = (titleProp?.title ?? []).map((t) => t.plain_text ?? t.text?.content ?? '').join('');
+        this.clientNames.set(id, name || 'Unknown client');
+      }
+      result.set(id, this.clientNames.get(id)!);
+    }
+    return result;
   }
 
   private async findContactByEmail(email: string): Promise<NotionPage | null> {

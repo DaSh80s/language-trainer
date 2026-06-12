@@ -26,6 +26,7 @@ export const CONTACT_PROPS = {
   sourcedFrom: 'Sourced from',
   tags: 'Client or candidate?',
   appliedForRole: 'Applied for role',
+  oppsMatched: 'Opps matched',
   jobRef: 'Job ID/Customer ref.',
   processingNotes: 'Processing notes',
 } as const;
@@ -36,23 +37,12 @@ export const OPPORTUNITY_PROPS = {
   jobId: 'Job ID',
   stage: 'Stage',
   clientRef: 'Client ref. no.',
+  client: 'Client',
 } as const;
 
 /** Existing select option in `Sourced from` — reused, not invented. */
 export const SOURCED_FROM_LINKEDIN = 'LinkedIn Recruiter';
 export const CANDIDATE_TAG = 'Candidate';
-
-/** Stages where the role can no longer receive applicants — skipped for matching. */
-export const TERMINAL_STAGES = new Set([
-  'Closed other',
-  'Done deal!',
-  'Extended',
-  'Position closed / budget cut',
-  'Unqualified lead',
-  'Declined participation / did not find qualified candidates',
-  'Offer declined by candidate',
-  'Closed filled by client',
-]);
 
 // ── Notion API value shapes (the subset we touch) ────────────────────────────
 
@@ -84,17 +74,20 @@ const plain = (items: RichTextItem[] | undefined) =>
 
 // ── Reading ──────────────────────────────────────────────────────────────────
 
+/** Terminal-stage roles are kept: live ones feed matching, hired history feeds affinity. */
 export function parseOpportunityPage(page: NotionPage): Opportunity | null {
-  const stage = page.properties[OPPORTUNITY_PROPS.stage]?.select?.name;
-  if (stage && TERMINAL_STAGES.has(stage)) return null;
   const title = plain(page.properties[OPPORTUNITY_PROPS.title]?.title);
   if (!title) return null;
+  const stage = page.properties[OPPORTUNITY_PROPS.stage]?.select?.name;
   const clientRef = plain(page.properties[OPPORTUNITY_PROPS.clientRef]?.rich_text).trim();
+  const clientIds = (page.properties[OPPORTUNITY_PROPS.client]?.relation ?? []).map((r) => r.id);
   return {
     id: page.id,
     title,
     jobDescription: plain(page.properties[OPPORTUNITY_PROPS.jobDescription]?.rich_text),
     ...(clientRef ? { clientRef } : {}),
+    ...(stage ? { stage } : {}),
+    ...(clientIds.length ? { clientIds } : {}),
   };
 }
 
@@ -108,6 +101,7 @@ export interface ExistingContact {
   pageId: string;
   tags: string[];
   appliedRoleIds: string[];
+  oppsMatchedIds: string[];
 }
 
 export function parseContactPage(page: NotionPage): ExistingContact {
@@ -115,6 +109,7 @@ export function parseContactPage(page: NotionPage): ExistingContact {
     pageId: page.id,
     tags: (page.properties[CONTACT_PROPS.tags]?.multi_select ?? []).map((o) => o.name),
     appliedRoleIds: (page.properties[CONTACT_PROPS.appliedForRole]?.relation ?? []).map((r) => r.id),
+    oppsMatchedIds: (page.properties[CONTACT_PROPS.oppsMatched]?.relation ?? []).map((r) => r.id),
   };
 }
 
@@ -176,12 +171,22 @@ export function buildContactProperties(
     props[CONTACT_PROPS.fitCommentary] = { rich_text: text(fitCommentaryText(record)) };
   }
   if (jobRef) props[CONTACT_PROPS.jobRef] = { rich_text: text(jobRef) };
-  if (!record.opportunityId) {
-    props[CONTACT_PROPS.processingNotes] = {
-      rich_text: text(
-        `Unsorted: could not confidently map to an opportunity (source message ${record.sourceMessageId}). Needs manual triage.`,
-      ),
-    };
+
+  if (record.crossMatches.length) {
+    const matchedIds = new Set([...(existing?.oppsMatchedIds ?? []), ...record.crossMatches.map((m) => m.opportunityId)]);
+    props[CONTACT_PROPS.oppsMatched] = { relation: [...matchedIds].map((id) => ({ id })) };
   }
+
+  const noteLines = [
+    record.opportunityId
+      ? ''
+      : `Unsorted: could not confidently map to an opportunity (source message ${record.sourceMessageId}). Needs manual triage.`,
+    ...record.crossMatches.map((m) => `Cross-match: also worth a look for ${m.title} (${m.overall}/100).`),
+    ...record.clientAffinities.map(
+      (a) => `Client affinity (heuristic): ${a.clientName} previously hired similar — ${a.viaRoles.join('; ')}.`,
+    ),
+  ].filter(Boolean);
+  if (noteLines.length) props[CONTACT_PROPS.processingNotes] = { rich_text: text(noteLines.join('\n')) };
+
   return props;
 }

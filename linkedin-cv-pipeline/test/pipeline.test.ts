@@ -52,6 +52,8 @@ describe('runPipeline', () => {
       fit: null,
       tags: ['Website applicant'],
       sourceMessageId: 'web-1',
+      crossMatches: [],
+      clientAffinities: [],
     });
 
     const mail = new InMemoryMailSource([
@@ -97,6 +99,27 @@ describe('runPipeline', () => {
     expect(d.alerts.errors).toHaveLength(1);
     expect(mail.processed.has(ok.id)).toBe(true);
     expect(mail.processed.has(broken.id)).toBe(false); // retried next tick
+  });
+
+  it('cross-matches against other priority roles via skills overlap (criterion 10)', async () => {
+    // Applies to Product Manager, but skills say SQL → Data Analyst (Sourcing priority 2)
+    const mail = new InMemoryMailSource([
+      makeEmail({
+        jobTitle: 'Product Manager',
+        candidateName: 'Lior Aviv',
+        candidateEmail: 'lior@example.com',
+        attachments: [makeCvAttachment('Lior Aviv', 'lior@example.com', ['SQL', 'dashboards'])],
+      }),
+    ]);
+    const d = deps(mail);
+
+    const summary = await runPipeline(d);
+
+    expect(summary.written).toBe(1);
+    const lior = d.store.records.get('lior@example.com')!;
+    expect(lior.opportunityId).toBe('opp-product');
+    expect(lior.crossMatches.map((m) => m.opportunityId)).toEqual(['opp-data']);
+    expect(lior.crossMatches[0]!.overall).toBeGreaterThanOrEqual(60);
   });
 
   it('is idempotent across re-runs (criterion 9)', async () => {

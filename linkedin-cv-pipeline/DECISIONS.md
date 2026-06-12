@@ -151,3 +151,21 @@ left unprocessed for manual import. DOCX and other non-PDF/text attachments like
 **Why:** Email is the dedupe key (D8); writing a record without it would either collide
 with other empty-email contacts or silently break dedupe. Visible failure beats data
 corruption. Revisit if LinkedIn volume shows meaningful non-PDF CV share.
+
+## D15 — Cross-matching + client affinity (2026-06-12, requested by Dan)
+
+**Decision (cross-match, criterion 10):** After scoring the applied role, pre-rank other
+live `Sourcing priority 1/2` roles with a free local similarity (0.6·title + 0.4·skills
+found in JD), Groq-score at most the top 3, and record those with overall ≥ 60 via the
+existing contacts `Opps matched` relation (additive, mirrors the opportunities `Matches`
+pattern) plus a "Cross-match: also worth a look for …" line in `Processing notes`.
+**Decision (client affinity, criterion 11):** Clients whose *hired* opportunities
+(`Done deal!`/`Extended`) clear local similarity ≥ 0.45 against the candidate get a
+note: "Client affinity (heuristic): {client} previously hired similar — {roles}".
+Note-only, zero Groq calls, labelled heuristic so recruiters weigh it accordingly.
+**Robustness:** enrichment runs best-effort — a failure alerts to Slack and the
+applicant record is still written without it.
+**Why local-only for clients:** placement history is sparse; LLM-inferred client
+affinity would be confident-sounding noise. Revisit with live data in v2.
+**Alternative rejected:** scoring every applicant against every open role — Groq cost
+and latency scale with the board size for marginal benefit beyond the top 3.

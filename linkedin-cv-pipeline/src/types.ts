@@ -42,6 +42,24 @@ export interface Opportunity {
   jobDescription: string;
   /** Client reference (e.g. "rfx1557530") — exact-match signal for role mapping. */
   clientRef?: string;
+  /** Notion `Stage` value; semantics in core/stages.ts. */
+  stage?: string;
+  /** Client (company) page ids — basis for client affinity. */
+  clientIds?: string[];
+}
+
+/** A priority-1/2 role this applicant also scores well against (SPEC criterion 10). */
+export interface CrossMatchResult {
+  opportunityId: string;
+  title: string;
+  overall: number;
+}
+
+/** A client whose historically hired roles resemble this candidate (SPEC criterion 11). */
+export interface ClientAffinity {
+  clientId: string;
+  clientName: string;
+  viaRoles: string[];
 }
 
 export const LINKEDIN_APPLICANT_TAG = 'LinkedIn applicant';
@@ -53,6 +71,8 @@ export interface CandidateRecord {
   fit: FitScore | null;
   tags: string[];
   sourceMessageId: string;
+  crossMatches: CrossMatchResult[];
+  clientAffinities: ClientAffinity[];
 }
 
 export interface UpsertResult {
@@ -81,9 +101,12 @@ export interface CvAnalyzer {
 }
 
 export interface CandidateStore {
+  /** All opportunities incl. terminal stages (history feeds client affinity). */
   listOpportunities(): Promise<Opportunity[]>;
   /** Dedupe by profile.email: update existing record, else create (SPEC criterion 5). */
   upsertCandidate(record: CandidateRecord): Promise<UpsertResult>;
+  /** Client (company) page id → display name, for readable affinity notes. */
+  resolveClientNames(clientIds: string[]): Promise<Map<string, string>>;
 }
 
 export interface AlertSink {

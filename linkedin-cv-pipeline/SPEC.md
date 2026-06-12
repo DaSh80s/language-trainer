@@ -29,6 +29,14 @@ within minutes of arrival — with no manual steps.
    every run posts a summary (received / parsed / written / unsorted / failed).
 9. Idempotency: processed emails are marked in the mailbox; a re-run never double-imports.
    Dedupe-by-email is the second safety net.
+10. **Cross-matching:** each applicant is also checked against other live roles in
+    `Sourcing priority 1/2`. Strong fits (Groq overall ≥ 60, max 3 scored per applicant
+    after free local pre-ranking) are linked via the `Opps matched` relation and noted
+    on the record ("Cross-match: also worth a look for …").
+11. **Client affinity (heuristic):** clients whose historically *hired* roles
+    (`Done deal!`/`Extended`) resemble the candidate get a note on the record
+    ("Client affinity (heuristic): {client} previously hired similar — …"). Local
+    similarity only, explicitly labelled heuristic, no relations written.
 
 ## Non-goals (scope guard)
 

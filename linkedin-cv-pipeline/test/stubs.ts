@@ -38,9 +38,9 @@ export function makeEmail(opts: {
 }
 
 export const OPPORTUNITIES: Opportunity[] = [
-  { id: 'opp-backend', title: 'Senior Backend Engineer (m/f/d)', jobDescription: 'Node, TypeScript, distributed systems.' },
-  { id: 'opp-product', title: 'Product Manager', jobDescription: 'Roadmaps, discovery, B2B SaaS.' },
-  { id: 'opp-data', title: 'Data Analyst - Remote', jobDescription: 'SQL, dashboards, experimentation.' },
+  { id: 'opp-backend', title: 'Senior Backend Engineer (m/f/d)', jobDescription: 'Node, TypeScript, distributed systems.', stage: 'Sourcing priority 1' },
+  { id: 'opp-product', title: 'Product Manager', jobDescription: 'Roadmaps, discovery, B2B SaaS.', stage: 'Open to all' },
+  { id: 'opp-data', title: 'Data Analyst - Remote', jobDescription: 'SQL, dashboards, experimentation.', stage: 'Sourcing priority 2' },
 ];
 
 // ── In-memory ports ──────────────────────────────────────────────────────────
@@ -117,6 +117,10 @@ export class InMemoryStore implements CandidateStore {
     const recordId = `rec-${this.records.size + 1}`;
     this.records.set(record.profile.email, { ...record, recordId });
     return { action: 'created', recordId };
+  }
+
+  async resolveClientNames(clientIds: string[]): Promise<Map<string, string>> {
+    return new Map(clientIds.map((id) => [id, `Client ${id}`]));
   }
 }
 

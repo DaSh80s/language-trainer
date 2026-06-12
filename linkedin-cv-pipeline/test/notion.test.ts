@@ -23,6 +23,8 @@ const record = (overrides: Partial<CandidateRecord> = {}): CandidateRecord => ({
   fit: { skills: 80, experience: 70, seniority: 75, overall: 76, rationale: 'Solid match.' },
   tags: [LINKEDIN_APPLICANT_TAG],
   sourceMessageId: 'msg-1',
+  crossMatches: [],
+  clientAffinities: [],
   ...overrides,
 });
 
@@ -38,18 +40,19 @@ const opportunityPage: NotionPage = {
 };
 
 describe('parseOpportunityPage', () => {
-  it('maps title, JD, and live stage', () => {
+  it('maps title, JD, and stage', () => {
     const opp = parseOpportunityPage(opportunityPage)!;
     expect(opp.title).toContain('Senior Data Engineer SQL');
     expect(opp.jobDescription).toContain('Data Vault');
+    expect(opp.stage).toBe("CV's sent");
   });
 
-  it('drops terminal-stage roles', () => {
+  it('keeps terminal-stage roles with their stage (history feeds client affinity)', () => {
     const closed: NotionPage = {
       ...opportunityPage,
       properties: { ...opportunityPage.properties, Stage: { select: { name: 'Done deal!' } } },
     };
-    expect(parseOpportunityPage(closed)).toBeNull();
+    expect(parseOpportunityPage(closed)?.stage).toBe('Done deal!');
   });
 });
 
@@ -72,11 +75,29 @@ describe('buildContactProperties', () => {
       pageId: 'existing-id',
       tags: ['Candidate', 'Hotlist-equivalent'],
       appliedRoleIds: ['earlier-opp-id'],
+      oppsMatchedIds: [],
     }) as Record<string, any>;
     const tagNames = props['Client or candidate?'].multi_select.map((o: any) => o.name);
     expect(tagNames).toEqual(expect.arrayContaining(['Hotlist-equivalent', 'Candidate', LINKEDIN_APPLICANT_TAG]));
     const roleIds = props['Applied for role'].relation.map((r: any) => r.id);
     expect(roleIds).toEqual(expect.arrayContaining(['earlier-opp-id', 'opp-page-id']));
+  });
+
+  it('writes cross-matches to Opps matched (additive) and readable notes (criteria 10-11)', () => {
+    const props = buildContactProperties(
+      record({
+        crossMatches: [{ opportunityId: 'opp-x', title: 'Data Analyst - Remote', overall: 72 }],
+        clientAffinities: [{ clientId: 'c1', clientName: 'Julius Baer', viaRoles: ['LUX - Senior Data Engineer SQL'] }],
+      }),
+      'JOB-1838',
+      { pageId: 'p', tags: [], appliedRoleIds: [], oppsMatchedIds: ['opp-old'] },
+    ) as Record<string, any>;
+
+    const matchedIds = props['Opps matched'].relation.map((r: any) => r.id);
+    expect(matchedIds).toEqual(expect.arrayContaining(['opp-old', 'opp-x']));
+    const notes = props['Processing notes'].rich_text[0].text.content;
+    expect(notes).toContain('Cross-match: also worth a look for Data Analyst - Remote (72/100)');
+    expect(notes).toContain('Client affinity (heuristic): Julius Baer');
   });
 
   it('marks unsorted records for triage without score or relation (criterion 6)', () => {
@@ -160,6 +181,11 @@ describe('parseContactPage', () => {
         'Applied for role': { relation: [{ id: 'r1' }, { id: 'r2' }] },
       },
     });
-    expect(existing).toEqual({ pageId: 'p1', tags: ['Candidate', 'Client'], appliedRoleIds: ['r1', 'r2'] });
+    expect(existing).toEqual({
+      pageId: 'p1',
+      tags: ['Candidate', 'Client'],
+      appliedRoleIds: ['r1', 'r2'],
+      oppsMatchedIds: [],
+    });
   });
 });
