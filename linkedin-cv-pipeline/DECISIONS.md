@@ -68,3 +68,45 @@ suffixes like "(m/f/d)", "- Remote". Threshold + patterns get locked against rea
 emails in M3.
 **Alternative rejected:** Per-ad reference tags — deterministic but adds manual work to
 every ad, which this project exists to remove.
+
+## D8 — Verified Notion schema mapping (2026-06-12)
+
+**Decision:** Map to the live Rigby OS schema, verified against real records:
+- Contacts: **"All contacts"** (database `3f64f533d5dd4ea8a1263607204a806a`, data source
+  `b5034a1f-5328-4872-a423-f1efdbb6ab97`). Dedupe key `Email`. Fields written: title,
+  `Email`, `Phone 1`, `Job title`, `Education`, `Auto-summary` (summary + location +
+  skills), `Fit score`, `Fit commentary`, `Sourced from`, `Client or candidate?`,
+  `Applied for role`, `Job ID/Customer ref.`, `Processing notes` (Unsorted reason).
+- Opportunities: **"Opportunities"** (database `f48d478f19c646e8aa0f17020d4495c2`, data
+  source `805f4f75-a599-41d0-aa5c-c1f35cb5785b`). `Job Title` = title, `Orig JD text` =
+  JD for scoring, `Job ID` = JOB-XXXX auto-id, terminal `Stage` values excluded from
+  matching.
+- **Applicant relation:** contacts `Applied for role` ↔ opportunities `Applicants`
+  (dual pair confirmed on a real applicant: contact CAN-8381 ↔ JOB-1838). This is the
+  same pattern the existing website-application flow uses (`From a form?`, `Job
+  ID/Customer ref.`, `Fit score`/`Fit commentary` all populated there).
+**Why:** Mirrors existing plumbing exactly (SPEC non-goal: don't rebuild it).
+**Alternative rejected:** Configurable property names via env — pointless indirection
+for a single workspace; constants in `notionSchema.ts` are typed and test-covered.
+
+## D9 — Tag placement: `Client or candidate?` + `Sourced from` (2026-06-12)
+
+**Decision:** The `LinkedIn applicant` tag is written as a new option in the
+`Client or candidate?` multi-select (alongside the existing `Candidate`, which we also
+set), and `Sourced from` is set to the existing `LinkedIn Recruiter` option.
+**Why:** The schema has no generic tags field; `Client or candidate?` is the
+contact-classification multi-select and multi-selects auto-create options on first
+write. `Sourced from` already has a `LinkedIn Recruiter` option, so source attribution
+follows the team's existing convention.
+**Alternative rejected:** A new dedicated property — schema changes to a shared CRM
+need the team's buy-in. **Assumption flagged:** confirm `Client or candidate?` is the
+right home for the tag; trivially changeable in `notionSchema.ts`.
+
+## D10 — Known limits of the contact-level model (2026-06-12)
+
+- Fit score/commentary live on the *contact*, so a candidate applying to two roles keeps
+  only the latest score (the role relation keeps both). Same shape as the existing
+  website flow — accepted for v1.
+- Dedupe checks `Email` only, not `Email 2`.
+- Relation merge carries over the relation ids returned by the page read; if a contact
+  ever had >25 role relations the list could truncate. Not realistic for applicants.

@@ -12,9 +12,8 @@ export interface Env {
   GROQ_API_KEY: string;
   GROQ_MODEL: string;
   NOTION_TOKEN: string;
-  NOTION_CANDIDATES_DB_ID: string;
+  NOTION_CONTACTS_DB_ID: string;
   NOTION_OPPORTUNITIES_DB_ID: string;
-  NOTION_APPLICANT_RELATION: string;
   SLACK_WEBHOOK_URL: string;
 }
 
@@ -31,9 +30,8 @@ export default {
       analyzer: new GroqAnalyzer({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL }),
       store: new NotionCandidateStore({
         token: env.NOTION_TOKEN,
-        candidatesDbId: env.NOTION_CANDIDATES_DB_ID,
-        opportunitiesDbId: env.NOTION_OPPORTUNITIES_DB_ID,
-        applicantRelationProperty: env.NOTION_APPLICANT_RELATION,
+        contactsDatabaseId: env.NOTION_CONTACTS_DB_ID,
+        opportunitiesDatabaseId: env.NOTION_OPPORTUNITIES_DB_ID,
       }),
       alerts,
     }).catch((err) => alerts.error('pipeline run crashed', err));
