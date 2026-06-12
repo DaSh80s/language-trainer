@@ -76,7 +76,11 @@ export function titleSimilarity(a: string, b: string): number {
 export const MATCH_THRESHOLD = 0.5;
 
 function hasClientRef(opp: Opportunity, ref: string): boolean {
-  if (opp.clientRef && opp.clientRef.toLowerCase().replace(/\s+/g, '') === ref) return true;
+  if (opp.clientRef) {
+    const oppRef = opp.clientRef.toLowerCase().replace(/\s+/g, '');
+    // Digit fallback covers a `Client ref. no.` stored without the rfx prefix.
+    if (oppRef === ref || oppRef.replace(/\D/g, '') === ref.replace(/\D/g, '')) return true;
+  }
   return opp.title.toLowerCase().replace(/\s+/g, '').includes(ref);
 }
 

@@ -1,3 +1,4 @@
+import { HttpApiError } from '../core/apiError.js';
 import type { ApplicationEmail, CvAttachment, MailSource } from '../types.js';
 
 export interface GraphConfig {
@@ -8,15 +9,9 @@ export interface GraphConfig {
   mailboxAddress: string;
 }
 
-export class GraphApiError extends Error {
-  constructor(
-    readonly status: number,
-    body: string,
-  ) {
-    super(`Graph API ${status}: ${body.slice(0, 300)}`);
-  }
-  get retryable(): boolean {
-    return this.status === 429 || this.status >= 500;
+export class GraphApiError extends HttpApiError {
+  constructor(status: number, body: string) {
+    super('Graph', status, body);
   }
 }
 
@@ -25,6 +20,13 @@ const APPLICATION_SENDER = 'jobs-listings@linkedin.com';
 export const PROCESSED_CATEGORY = 'cv-pipeline-processed';
 /** Re-scan window: anything older was either processed or predates the pipeline. */
 const LOOKBACK_DAYS = 14;
+/**
+ * Per-tick cap: bounds memory (base64 CVs held in RAM) and wall time (serial
+ * Groq/Notion calls) for a single invocation. A 100-applicant burst clears
+ * over a few 5-minute ticks instead of one giant run — nothing is lost, the
+ * remainder simply stays unprocessed until the next tick.
+ */
+export const MAX_BATCH = 25;
 
 interface GraphMessage {
   id: string;
@@ -105,6 +107,7 @@ export class GraphMailSource implements MailSource {
   }
 
   async fetchUnprocessed(): Promise<ApplicationEmail[]> {
+    this.knownCategories.clear(); // re-populated below; prevents unbounded growth across ticks
     const since = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000).toISOString();
     const filter =
       `receivedDateTime ge ${since}` +
@@ -122,7 +125,9 @@ export class GraphMailSource implements MailSource {
       url = page['@odata.nextLink'];
     }
 
-    const unprocessed = messages.filter((m) => !(m.categories ?? []).includes(PROCESSED_CATEGORY));
+    const unprocessed = messages
+      .filter((m) => !(m.categories ?? []).includes(PROCESSED_CATEGORY))
+      .slice(0, MAX_BATCH);
     const emails: ApplicationEmail[] = [];
     for (const message of unprocessed) {
       this.knownCategories.set(message.id, message.categories ?? []);

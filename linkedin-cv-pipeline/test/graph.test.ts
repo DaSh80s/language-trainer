@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GraphMailSource, PROCESSED_CATEGORY } from '../src/clients/graph.js';
+import { GraphMailSource, MAX_BATCH, PROCESSED_CATEGORY } from '../src/clients/graph.js';
 
 const TOKEN_RESPONSE = { access_token: 'tok-1', expires_in: 3600 };
 
@@ -93,6 +93,16 @@ describe('GraphMailSource', () => {
       categories: ['Important', PROCESSED_CATEGORY],
       isRead: true,
     });
+  });
+
+  it('caps a burst at MAX_BATCH per tick, leaving the rest for the next run', async () => {
+    const { source } = sourceWith((url) => {
+      if (url.includes('/oauth2/')) return TOKEN_RESPONSE;
+      if (url.includes('/attachments')) return { value: [cvAttachment] };
+      return { value: Array.from({ length: MAX_BATCH + 15 }, (_, i) => message(`m${i}`)) };
+    });
+    const emails = await source.fetchUnprocessed();
+    expect(emails).toHaveLength(MAX_BATCH);
   });
 
   it('drops non-file attachments (inline images, item attachments)', async () => {

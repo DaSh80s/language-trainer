@@ -69,6 +69,12 @@ LinkedIn Recruiter → Settings → Product settings → Company Settings → Jo
 
 ## Operational notes
 
+- **Use the Workers paid plan** (Standard, ~$5/mo): PDF text extraction (pdf.js) is
+  CPU-heavy and a single CV can exceed the free plan's 10 ms CPU budget; the paid plan
+  allows 30 s CPU per invocation.
+- Each tick processes at most 25 emails (memory + wall-time bound); a 100-applicant
+  burst clears over ~4 ticks (≈20 minutes) with nothing lost.
+
 - A message that fails every run stops being retried once it ages out of the 14-day
   lookback — Slack alerts are the tripwire, act on them.
 - CVs without a discoverable email address are alerted and left unprocessed (manual

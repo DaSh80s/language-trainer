@@ -1,3 +1,4 @@
+import { HttpApiError } from '../core/apiError.js';
 import { extractCvText, type TextExtractor } from '../core/cvText.js';
 import type { CandidateProfile, CvAnalyzer, CvAttachment, FitScore } from '../types.js';
 
@@ -8,15 +9,9 @@ export interface GroqConfig {
 
 export const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
 
-export class GroqApiError extends Error {
-  constructor(
-    readonly status: number,
-    body: string,
-  ) {
-    super(`Groq API ${status}: ${body.slice(0, 300)}`);
-  }
-  get retryable(): boolean {
-    return this.status === 429 || this.status >= 500;
+export class GroqApiError extends HttpApiError {
+  constructor(status: number, body: string) {
+    super('Groq', status, body);
   }
 }
 

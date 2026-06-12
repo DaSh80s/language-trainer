@@ -1,3 +1,4 @@
+import { HttpApiError } from '../core/apiError.js';
 import { RateLimiter } from '../core/throttle.js';
 import type { CandidateRecord, CandidateStore, Opportunity, UpsertResult } from '../types.js';
 import {
@@ -6,6 +7,7 @@ import {
   opportunityJobRef,
   parseContactPage,
   parseOpportunityPage,
+  plain,
   type NotionPage,
 } from './notionSchema.js';
 
@@ -17,16 +19,9 @@ export interface NotionConfig {
   opportunitiesDatabaseId: string;
 }
 
-export class NotionApiError extends Error {
-  constructor(
-    readonly status: number,
-    body: string,
-  ) {
-    super(`Notion API ${status}: ${body.slice(0, 300)}`);
-  }
-  /** 429 and 5xx heal on retry; 4xx mapping bugs do not. */
-  get retryable(): boolean {
-    return this.status === 429 || this.status >= 500;
+export class NotionApiError extends HttpApiError {
+  constructor(status: number, body: string) {
+    super('Notion', status, body);
   }
 }
 
@@ -71,6 +66,7 @@ export class NotionCandidateStore implements CandidateStore {
   }
 
   async listOpportunities(): Promise<Opportunity[]> {
+    this.jobRefs.clear(); // full re-population below; avoids stale refs across retried/odd runs
     const opportunities: Opportunity[] = [];
     let cursor: string | null = null;
     do {
@@ -100,8 +96,7 @@ export class NotionCandidateStore implements CandidateStore {
       if (!this.clientNames.has(id)) {
         const page = await this.request<NotionPage>('GET', `/pages/${id}`);
         const titleProp = Object.values(page.properties).find((p) => p.title !== undefined);
-        const name = (titleProp?.title ?? []).map((t) => t.plain_text ?? t.text?.content ?? '').join('');
-        this.clientNames.set(id, name || 'Unknown client');
+        this.clientNames.set(id, plain(titleProp?.title) || 'Unknown client');
       }
       result.set(id, this.clientNames.get(id)!);
     }

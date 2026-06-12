@@ -68,6 +68,12 @@ describe('matchOpportunity', () => {
     expect(matchOpportunity(hints, [...OPPORTUNITIES, luxOpp])?.id).toBe('opp-lux');
   });
 
+  it('matches when Client ref. no. is stored without the rfx prefix', () => {
+    const bareRef = { ...luxOpp, title: 'Senior Data Engineer SQL', clientRef: '1557530' };
+    const hints = extractRoleHints('New application: Anything (rfx1557530) from Jane Doe', '');
+    expect(matchOpportunity(hints, [bareRef])?.id).toBe('opp-lux');
+  });
+
   it('matches by ref embedded in the opportunity title when Client ref. no. is empty', () => {
     const noRef = { ...luxOpp, clientRef: undefined };
     const hints = extractRoleHints('New application: Anything (rfx1557530) from Jane Doe', '');

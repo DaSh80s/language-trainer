@@ -17,7 +17,6 @@ import {
 export const CONTACT_PROPS = {
   email: 'Email',
   phone: 'Phone 1',
-  linkedin: 'LinkedIn',
   jobTitle: 'Job title',
   education: 'Education',
   summary: 'Auto-summary',
@@ -69,7 +68,7 @@ export interface NotionPropertyValue {
 }
 
 const text = (content: string) => [{ text: { content: content.slice(0, 2000) } }];
-const plain = (items: RichTextItem[] | undefined) =>
+export const plain = (items: RichTextItem[] | undefined): string =>
   (items ?? []).map((i) => i.plain_text ?? i.text?.content ?? '').join('');
 
 // ── Reading ──────────────────────────────────────────────────────────────────

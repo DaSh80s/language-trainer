@@ -4,15 +4,21 @@ import type { AlertSink, RunSummary } from '../types.js';
 export class SlackAlertSink implements AlertSink {
   constructor(private readonly webhookUrl: string) {}
 
+  // Alerting must never take the pipeline down — a thrown alert inside the
+  // pipeline's catch path would abort the rest of the batch. Last resort is
+  // the Worker log, so post() catches network rejections too, not just !ok.
   private async post(text: string): Promise<void> {
-    const res = await fetch(this.webhookUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) {
-      // Alerting must never take the pipeline down; last resort is the Worker log.
-      console.error(`Slack webhook failed: ${res.status}`);
+    try {
+      const res = await fetch(this.webhookUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        console.error(`Slack webhook failed: ${res.status}`);
+      }
+    } catch (err) {
+      console.error(`Slack webhook unreachable: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
