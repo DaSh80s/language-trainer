@@ -134,3 +134,20 @@ categories, + mark read) so mail stays visible in the inbox. Graph can't filter 
 categories server-side → filtered client-side within the window.
 **Alternative rejected:** Moving processed mail to a subfolder — invisible mail surprises
 humans; deleting is irreversible.
+
+## D13 — unpdf for CV text extraction; Groq via JSON mode (2026-06-12)
+
+**Decision:** PDF→text with `unpdf` (pdf.js serverless build; runs on Workers, no native
+deps). Groq chat completions with `response_format: json_object`, temperature 0; default
+model `llama-3.3-70b-versatile` (overridable via `GROQ_MODEL`). The overall fit score is
+computed in code as a fixed weighted blend (skills .45 / experience .35 / seniority .2)
+of model sub-scores — deterministic, not model whim.
+**Alternative rejected:** `pdf-parse` — depends on Node `fs`, doesn't run on Workers.
+
+## D14 — CVs without a discoverable email fail loudly (2026-06-12)
+
+**Decision:** If parsing yields no valid email, the message errors → Slack alert →
+left unprocessed for manual import. DOCX and other non-PDF/text attachments likewise.
+**Why:** Email is the dedupe key (D8); writing a record without it would either collide
+with other empty-email contacts or silently break dedupe. Visible failure beats data
+corruption. Revisit if LinkedIn volume shows meaningful non-PDF CV share.

@@ -1,5 +1,5 @@
 import { GraphMailSource } from './clients/graph.js';
-import { GroqAnalyzer } from './clients/groq.js';
+import { DEFAULT_GROQ_MODEL, GroqAnalyzer } from './clients/groq.js';
 import { NotionCandidateStore } from './clients/notion.js';
 import { SlackAlertSink } from './clients/slack.js';
 import { runPipeline } from './pipeline.js';
@@ -10,7 +10,7 @@ export interface Env {
   GRAPH_CLIENT_SECRET: string;
   MAILBOX_ADDRESS: string;
   GROQ_API_KEY: string;
-  GROQ_MODEL: string;
+  GROQ_MODEL?: string;
   NOTION_TOKEN: string;
   NOTION_CONTACTS_DB_ID: string;
   NOTION_OPPORTUNITIES_DB_ID: string;
@@ -27,7 +27,7 @@ export default {
         clientSecret: env.GRAPH_CLIENT_SECRET,
         mailboxAddress: env.MAILBOX_ADDRESS,
       }),
-      analyzer: new GroqAnalyzer({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL }),
+      analyzer: new GroqAnalyzer({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL }),
       store: new NotionCandidateStore({
         token: env.NOTION_TOKEN,
         contactsDatabaseId: env.NOTION_CONTACTS_DB_ID,
