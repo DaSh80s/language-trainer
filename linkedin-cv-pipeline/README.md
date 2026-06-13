@@ -1,6 +1,6 @@
 # linkedin-cv-pipeline
 
-**Repo:** https://github.com/DaSh80s/language-trainer — branch `claude/linkedin-recruiter-notion-cv-wknzgk`, folder `linkedin-cv-pipeline/` *(temporary home: session tooling could not create the dedicated repo; see DECISIONS.md D1 for migration steps to `DaSh80s/linkedin-cv-pipeline`)*
+**Repo:** https://github.com/DaSh80s/linkedin-cv-pipeline (source of truth)
 **Purpose:** Automatically ingest LinkedIn Recruiter job-application emails, parse and score each CV with Groq, and write enriched, role-linked candidate records into Notion.
 **Path convention:** clone to `/Users/danielshalom/Documents/AI Projects/linkedin-cv-pipeline` on every machine.
 

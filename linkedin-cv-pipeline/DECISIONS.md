@@ -169,3 +169,13 @@ applicant record is still written without it.
 affinity would be confident-sounding noise. Revisit with live data in v2.
 **Alternative rejected:** scoring every applicant against every open role — Groq cost
 and latency scale with the board size for marginal benefit beyond the top 3.
+
+## D16 — Migrated to standalone repo (2026-06-13)
+
+**Decision:** The project now lives at **https://github.com/DaSh80s/linkedin-cv-pipeline**
+(private), cloned to `/Users/danielshalom/Documents/AI Projects/linkedin-cv-pipeline`.
+This supersedes the temporary home in D1. The folder contents were imported with a fresh
+history; the `language-trainer` branch `claude/linkedin-recruiter-notion-cv-wknzgk`
+remains as the build's historical record but is no longer the source of truth.
+**Why:** Honors the one-project-one-repo + canonical-path convention now that the repo
+exists. D1's session GitHub scope (language-trainer only) blocked creating it earlier.
