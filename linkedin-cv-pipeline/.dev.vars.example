@@ -1,0 +1,13 @@
+# Copy this file to `.dev.vars` (gitignored) for local `wrangler dev`.
+# In production these are set via `wrangler secret put <NAME>` — see RUNBOOK.md §5.
+# This file doubles as the checklist of secrets the Worker needs.
+
+GRAPH_TENANT_ID=
+GRAPH_CLIENT_ID=
+GRAPH_CLIENT_SECRET=
+NOTION_TOKEN=
+GROQ_API_KEY=
+SLACK_WEBHOOK_URL=
+
+# Optional — non-secret vars already defaulted in wrangler.toml; override here if needed:
+# GROQ_MODEL=llama-3.3-70b-versatile
