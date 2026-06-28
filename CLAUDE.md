@@ -6,9 +6,12 @@ An AI-powered language practice app built with React + Vite, deployed on Vercel,
 _Update this section at the end of each session so any device can pick up where you left off._
 
 - **App state:** Live and working at https://language-trainer-kappa.vercel.app
-- **Last worked on:** Added Article Gender practice mode (2026-06-05)
+- **Last worked on:** Shipped the **Fluo redesign** (2026-06-28) — full visual overhaul to the warm editorial "Fluo" design system: CSS-variable theming with a working light (terracotta) / dark (fluo-lime) toggle persisted to `localStorage['lt_theme']`, Spectral + IBM Plex Sans/Mono fonts, new header + segmented tabs, two-column Practice screen (setup rail + pinned exercise card + docked answer bar), card-based Vocabulary grid, and a Progress dashboard with a weekly-activity chart. All existing logic (API, conversation/drill flow, streak, vocab & error storage) was preserved — this was a reskin, not a rewrite. Name kept as **Fluo**; default theme is **light**.
 - **In progress:** Nothing — app is stable
-- **Next ideas:** _(add things here as you think of them)_
+- **Next ideas:**
+  - Mobile: collapse the Practice setup rail into a chip + bottom-sheet (currently it just stacks above the chat on narrow screens).
+  - Vocab cards show a POS tag (Noun/Verb) only when derivable — the data model has no part-of-speech field yet; add one if we want reliable Noun/Verb filter chips.
+  - iPad landscape layout (handoff only covered portrait).
 
 ## Practice Modes
 | Mode | Description |
@@ -29,7 +32,7 @@ https://language-trainer-kappa.vercel.app
 https://github.com/DaSh80s/language-trainer
 
 ## Tech Stack
-- **Frontend:** React 18 + Vite + Tailwind CSS + lucide-react icons
+- **Frontend:** React 18 + Vite + Tailwind CSS + lucide-react icons. The Fluo UI is built with inline styles driven by **CSS custom properties** (theme tokens defined in `LIGHT_VARS`/`DARK_VARS` at the top of `src/App.jsx`); Tailwind is still present but barely used now. Fonts (Spectral, IBM Plex Sans, IBM Plex Mono) are loaded from Google Fonts in `index.html`. Responsive breakpoints live in `src/index.css` (`.fluo-*` classes).
 - **API Proxy:** Vercel serverless function (`api/chat.js`) — keeps the Anthropic API key server-side
 - **Deployment:** Vercel (auto-deploys from GitHub pushes to `main`)
 - **Local dev:** `npm run dev` (uses `vercel dev` to emulate serverless functions)
@@ -106,3 +109,9 @@ Claude has a **Chrome extension** that lets it see and control the browser direc
 3. Commit all changes (code + docs together) and push to GitHub
 
 GitHub is the **single source of truth**. Every session should end with a clean `git status` and everything pushed. A Stop hook auto-commits any files that were missed, but Claude should do it explicitly at end of session so commit messages are meaningful.
+
+## Cloudflare TODO (added 2026-06-17)
+
+Deploy to **Cloudflare Pages** — it's a Vite/React SPA, so static Pages hosting is the natural fit (fast, free, no build-minute cost).
+- `npm run build` -> deploy `dist/` via Pages Git integration or `wrangler pages deploy dist`.
+- If it gains an API later, add a Pages Function / Worker rather than a separate host.

@@ -1,67 +1,194 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, BookOpen, MessageSquare, GraduationCap, Trash2, RotateCcw, TrendingUp, Award, Volume2, Download, Brain, Zap, Target, Calendar, RefreshCw, AlertCircle } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
+
+// ── Theme tokens ──────────────────────────────────────────────────────────────
+const LIGHT_VARS = {
+  '--page': '#F4EDE1', '--panel': '#FAF6EF', '--panel-2': '#F0E8D8', '--panel-3': '#F6F0E6',
+  '--border': '#E7DBC4', '--border-2': '#EADFCB', '--ink': '#211D18', '--soft': '#534B40',
+  '--muted': '#9A8F7E', '--faint': '#B4A892',
+  '--accent': '#C2603C', '--accent-bg': 'rgba(194,96,60,.12)', '--accent-ink': '#FFFFFF', '--accent-glow': 'rgba(194,96,60,.22)',
+  '--green': '#5E7B53', '--green-ink': '#3D5234', '--green-bg': '#EAF0E2', '--green-border': '#CFDCC0',
+  '--field': '#FBF7EF', '--input': '#FFFDF9', '--shadow': 'rgba(60,50,30,.09)',
+};
+const DARK_VARS = {
+  '--page': '#161614', '--panel': '#26251F', '--panel-2': '#201F1A', '--panel-3': '#1C1B16',
+  '--border': '#3A382F', '--border-2': '#2E2C25', '--ink': '#F2EDE2', '--soft': '#CBC5B7',
+  '--muted': '#979085', '--faint': '#6E675B',
+  '--accent': '#BCEE7A', '--accent-bg': 'rgba(188,238,122,.14)', '--accent-ink': '#17240B', '--accent-glow': 'rgba(188,238,122,.45)',
+  '--green': '#8FB46E', '--green-ink': '#C8D3B4', '--green-bg': 'rgba(143,180,110,.15)', '--green-border': 'rgba(143,180,110,.32)',
+  '--field': '#2A281F', '--input': '#242219', '--shadow': 'rgba(0,0,0,.45)',
+};
+
+const ARTICLES = new Set([
+  'der', 'die', 'das', 'el', 'la', 'le', 'les', 'los', 'las', 'un', 'una', 'une',
+  'il', 'lo', 'gli', 'de', 'het', 'ett', 'en',
+]);
+
+function splitArticle(word) {
+  if (!word) return [null, word || ''];
+  const parts = String(word).trim().split(/\s+/);
+  if (parts.length > 1 && ARTICLES.has(parts[0].toLowerCase())) {
+    return [parts[0], parts.slice(1).join(' ')];
+  }
+  return [null, word];
+}
+
+function dueStatus(v) {
+  if (!v.nextReview) return { label: 'new', color: 'var(--muted)' };
+  const diffDays = Math.ceil((new Date(v.nextReview).getTime() - Date.now()) / 86400000);
+  if (diffDays < 0) return { label: 'overdue', color: 'var(--accent)', due: true };
+  if (diffDays === 0) return { label: 'due today', color: 'var(--accent)', due: true };
+  return { label: `due in ${diffDays}d`, color: 'var(--muted)' };
+}
+
+function fmtDate(d) {
+  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+
+function weeklyMinutes(history) {
+  const now = new Date();
+  const todayIdx = (now.getDay() + 6) % 7; // 0 = Monday
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(now.getDate() - todayIdx);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return { date: d, min: 0 };
+  });
+  history.forEach((s) => {
+    const sd = new Date(s.date);
+    for (let i = 0; i < 7; i++) {
+      const d = days[i].date;
+      if (sd.getFullYear() === d.getFullYear() && sd.getMonth() === d.getMonth() && sd.getDate() === d.getDate()) {
+        days[i].min += s.duration || 0;
+      }
+    }
+  });
+  return { days, todayIdx, total: days.reduce((a, b) => a + b.min, 0) };
+}
+
+// ── Small presentational helpers ──────────────────────────────────────────────
+function Select({ label, value, onChange, options }) {
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{ font: "500 11px 'IBM Plex Sans'", color: 'var(--muted)', marginBottom: 6 }}>{label}</div>
+      <div style={{ position: 'relative' }}>
+        <select
+          value={value}
+          onChange={onChange}
+          style={{
+            appearance: 'none', WebkitAppearance: 'none', width: '100%',
+            background: 'var(--field)', border: '1px solid var(--border)', borderRadius: 7,
+            padding: '10px 28px 10px 12px', fontSize: 14, color: 'var(--ink)',
+            fontFamily: "'IBM Plex Sans',sans-serif", cursor: 'pointer',
+          }}
+        >
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--faint)', pointerEvents: 'none', fontSize: 12 }}>⌄</span>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ value, suffix, label, color }) {
+  return (
+    <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px var(--shadow)', padding: '20px 22px' }}>
+      <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 34, lineHeight: 1, color }}>
+        {value}{suffix && <span style={{ fontSize: 16, color: 'var(--muted)', fontWeight: 500 }}> {suffix}</span>}
+      </div>
+      <div style={{ font: "500 11px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 8 }}>{label}</div>
+    </div>
+  );
+}
+
+function Dots({ count, color }) {
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: i < count ? color : 'var(--border)' }} />
+      ))}
+    </div>
+  );
+}
+
+function Bounce() {
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {[0, 0.12, 0.24].map((d, i) => (
+        <div key={i} className="animate-bounce" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', animationDelay: `${d}s` }} />
+      ))}
+    </div>
+  );
+}
 
 // ── Password Gate ─────────────────────────────────────────────────────────────
-
 function PasswordGate({ children }) {
-  const required = import.meta.env.VITE_APP_PASSWORD
-  const [authed, setAuthed] = useState(() => !required || localStorage.getItem('lt_auth') === required)
-  const [input, setInput] = useState('')
-  const [err, setErr] = useState(false)
+  const required = import.meta.env.VITE_APP_PASSWORD;
+  const [authed, setAuthed] = useState(() => !required || localStorage.getItem('lt_auth') === required);
+  const [input, setInput] = useState('');
+  const [err, setErr] = useState(false);
 
-  if (authed) return children
+  if (authed) return children;
 
   function attempt() {
     if (input === required) {
-      localStorage.setItem('lt_auth', required)
-      setAuthed(true)
+      localStorage.setItem('lt_auth', required);
+      setAuthed(true);
     } else {
-      setErr(true)
-      setInput('')
+      setErr(true);
+      setInput('');
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm border border-gray-100">
-        <div className="text-center mb-6">
-          <div className="text-4xl mb-3">🌍</div>
-          <h1 className="text-xl font-bold text-gray-800">Language Trainer</h1>
-          <p className="text-sm text-gray-500 mt-1">AI-powered language practice</p>
+    <div style={{ ...LIGHT_VARS, minHeight: '100vh', background: 'var(--page)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'IBM Plex Sans',sans-serif", padding: 24 }}>
+      <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 8px 30px var(--shadow)', padding: 32, width: '100%', maxWidth: 360 }}>
+        <div style={{ textAlign: 'center', marginBottom: 22 }}>
+          <div style={{ width: 52, height: 52, margin: '0 auto 14px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', fontFamily: "'Spectral',serif", fontWeight: 600, fontStyle: 'italic', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 5px 18px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.28)', letterSpacing: '-0.02em' }}>F</div>
+          <h1 style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 24, color: 'var(--ink)', margin: 0 }}>Fluo</h1>
+          <p style={{ font: "400 13px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 4 }}>AI-powered language practice</p>
         </div>
         <input
           type="password"
           value={input}
-          onChange={e => { setInput(e.target.value); setErr(false) }}
-          onKeyDown={e => e.key === 'Enter' && attempt()}
+          onChange={(e) => { setInput(e.target.value); setErr(false); }}
+          onKeyDown={(e) => e.key === 'Enter' && attempt()}
           placeholder="Password"
-          className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 mb-3"
           autoFocus
+          style={{ width: '100%', background: 'var(--input)', border: '1.5px solid var(--border)', borderRadius: 9, padding: '12px 14px', fontSize: 15, color: 'var(--ink)', marginBottom: 12, outline: 'none' }}
         />
-        {err && <p className="text-red-500 text-xs mb-3 text-center">Incorrect password</p>}
+        {err && <p style={{ color: 'var(--accent)', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>Incorrect password</p>}
         <button
           onClick={attempt}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors"
+          style={{ width: '100%', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontWeight: 600, fontSize: 14, padding: '12px', borderRadius: 9, cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}
         >
           Enter
         </button>
       </div>
     </div>
-  )
+  );
 }
 
 export default function LanguagePracticeApp() {
   // Core state
   const [selectedLanguage, setSelectedLanguage] = useState('German');
   const [proficiencyLevel, setProficiencyLevel] = useState('C2');
-  const [practiceMode, setPracticeMode] = useState('grammar'); // Grammar mode by default
+  const [practiceMode, setPracticeMode] = useState('grammar');
   const [topicFilter, setTopicFilter] = useState('general');
   const [userInput, setUserInput] = useState('');
   const [conversation, setConversation] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('practice');
-  const [darkMode, setDarkMode] = useState(true); // Dark mode by default
-  
+  const [theme, setTheme] = useState(() => {
+    try {
+      const s = localStorage.getItem('lt_theme');
+      if (s === 'light' || s === 'dark') return s;
+    } catch (e) { /* ignore */ }
+    return 'light';
+  });
+
   // Data state
   const [vocabularyList, setVocabularyList] = useState([]);
   const [practiceHistory, setPracticeHistory] = useState([]);
@@ -70,68 +197,63 @@ export default function LanguagePracticeApp() {
   const [currentStreak, setCurrentStreak] = useState(0);
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState(null);
-  
+
+  // Vocabulary view state
+  const [vocabFilter, setVocabFilter] = useState('all');
+  const [vocabSearch, setVocabSearch] = useState('');
+
   const conversationEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Load all data on mount
   useEffect(() => {
     loadAllData();
   }, [selectedLanguage]);
 
-  // Track session time every minute
+  const toggleTheme = () => {
+    setTheme((t) => {
+      const next = t === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('lt_theme', next); } catch (e) { /* ignore */ }
+      return next;
+    });
+  };
+
+  // Track session time
   const [currentSessionTime, setCurrentSessionTime] = useState(0);
   const [showErrorForm, setShowErrorForm] = useState(false);
   const [newErrorData, setNewErrorData] = useState({ original: '', correct: '', explanation: '' });
   const [usedSentences, setUsedSentences] = useState([]);
   const [isDrilling, setIsDrilling] = useState(false);
   const [drillingContext, setDrillingContext] = useState('');
-  
+
   useEffect(() => {
     if (sessionStartTime) {
       const interval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - sessionStartTime) / 60000);
         setCurrentSessionTime(elapsed);
-      }, 10000); // Check every 10 seconds
+      }, 10000);
       return () => clearInterval(interval);
-    } else {
-      setCurrentSessionTime(0);
     }
+    setCurrentSessionTime(0);
   }, [sessionStartTime]);
 
-  const getCurrentSessionMinutes = () => {
-    return currentSessionTime;
-  };
+  const getCurrentSessionMinutes = () => currentSessionTime;
 
   // Simple markdown renderer
   const renderMarkdown = (text) => {
     if (!text) return '';
-    
     let rendered = text;
-    
-    // Convert **bold** to <strong> (must come before single asterisks)
-    rendered = rendered.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
-    
-    // Convert headers
+    rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     rendered = rendered.replace(/^### (.+)$/gm, '<div style="font-size: 1.1em; font-weight: bold; margin: 8px 0 4px 0;">$1</div>');
     rendered = rendered.replace(/^## (.+)$/gm, '<div style="font-size: 1.2em; font-weight: bold; margin: 10px 0 5px 0;">$1</div>');
     rendered = rendered.replace(/^# (.+)$/gm, '<div style="font-size: 1.3em; font-weight: bold; margin: 12px 0 6px 0;">$1</div>');
-    
-    // Convert bullet points (- or • at start of line)
-    rendered = rendered.replace(/^[•-]\s+(.+)$/gm, '<div style="margin-left: 20px; margin-top: 2px;">• $1</div>');
-    
-    // Convert numbered lists
-    rendered = rendered.replace(/^\d+\.\s+(.+)$/gm, '<div style="margin-left: 20px; margin-top: 2px;">$&</div>');
-    
-    // Convert line breaks to <br>
+    rendered = rendered.replace(/^[•-]\s+(.+)$/gm, '<div style="margin-left: 18px; margin-top: 2px;">• $1</div>');
+    rendered = rendered.replace(/^\d+\.\s+(.+)$/gm, '<div style="margin-left: 18px; margin-top: 2px;">$&</div>');
     rendered = rendered.replace(/\n/g, '<br>');
-    
     return rendered;
   };
 
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    // Auto-focus input after conversation updates
     if (conversation.length > 0 && !isLoading) {
       inputRef.current?.focus();
     }
@@ -140,16 +262,16 @@ export default function LanguagePracticeApp() {
   const loadAllData = () => {
     try {
       const vocab = localStorage.getItem(`vocab-${selectedLanguage}`);
-      if (vocab) setVocabularyList(JSON.parse(vocab));
+      if (vocab) setVocabularyList(JSON.parse(vocab)); else setVocabularyList([]);
 
       const history = localStorage.getItem(`history-${selectedLanguage}`);
-      if (history) setPracticeHistory(JSON.parse(history));
+      if (history) setPracticeHistory(JSON.parse(history)); else setPracticeHistory([]);
 
       const errors = localStorage.getItem(`errors-${selectedLanguage}`);
-      if (errors) setCommonErrors(JSON.parse(errors));
+      if (errors) setCommonErrors(JSON.parse(errors)); else setCommonErrors([]);
 
-      const achievements = localStorage.getItem('achievements');
-      if (achievements) setAchievements(JSON.parse(achievements));
+      const ach = localStorage.getItem('achievements');
+      if (ach) setAchievements(JSON.parse(ach));
 
       const streakRaw = localStorage.getItem('streak-data');
       if (streakRaw) {
@@ -164,24 +286,14 @@ export default function LanguagePracticeApp() {
     }
   };
 
-  const saveVocabulary = (vocab) => {
-    localStorage.setItem(`vocab-${selectedLanguage}`, JSON.stringify(vocab));
-  };
-
-  const savePracticeHistory = (history) => {
-    localStorage.setItem(`history-${selectedLanguage}`, JSON.stringify(history));
-  };
-
-  const saveCommonErrors = (errors) => {
-    localStorage.setItem(`errors-${selectedLanguage}`, JSON.stringify(errors));
-  };
+  const saveVocabulary = (vocab) => localStorage.setItem(`vocab-${selectedLanguage}`, JSON.stringify(vocab));
+  const savePracticeHistory = (history) => localStorage.setItem(`history-${selectedLanguage}`, JSON.stringify(history));
 
   const updateStreak = () => {
     try {
       const raw = localStorage.getItem('streak-data');
       const today = new Date().toDateString();
       let streakData = { streak: 1, lastPracticeDate: today };
-
       if (raw) {
         const data = JSON.parse(raw);
         const lastPractice = new Date(data.lastPracticeDate).toDateString();
@@ -190,7 +302,6 @@ export default function LanguagePracticeApp() {
         streakData.streak = lastPractice === yesterday ? data.streak + 1 : 1;
         streakData.lastPracticeDate = today;
       }
-
       localStorage.setItem('streak-data', JSON.stringify(streakData));
       setCurrentStreak(streakData.streak);
     } catch (error) {
@@ -201,16 +312,13 @@ export default function LanguagePracticeApp() {
 
   const getSystemPrompt = () => {
     const levels = {
-      'A1': 'complete beginner', 'A2': 'elementary', 'B1': 'intermediate',
-      'B2': 'upper intermediate', 'C1': 'advanced', 'C2': 'mastery/native-like'
+      A1: 'complete beginner', A2: 'elementary', B1: 'intermediate',
+      B2: 'upper intermediate', C1: 'advanced', C2: 'mastery/native-like',
     };
-    
     const topicContext = topicFilter !== 'general' ? `Topic: ${topicFilter}.` : '';
-    
     const modes = {
-      'conversation': `Chat in ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Keep responses SHORT. After each exchange: ✓ corrections ✓ 1-2 alternatives ✓ 1-2 new words. Use emojis 👍`,
-      
-      'grammar': `Grammar practice for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext}
+      conversation: `Chat in ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Keep responses SHORT. After each exchange: ✓ corrections ✓ 1-2 alternatives ✓ 1-2 new words. Use emojis 👍`,
+      grammar: `Grammar practice for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext}
 
 ${usedSentences.length > 0 ? `IMPORTANT: Do NOT repeat these English sentences you already gave:\n${usedSentences.slice(-10).join('\n')}\n\n` : ''}
 
@@ -225,16 +333,11 @@ ONE question at a time. Format:
 ${isDrilling ? 'After feedback on a MISTAKE, ask: "Another drill on this? (Y/N)"' : 'ONLY if user makes a MISTAKE/ERROR, ask: "Drill this more? (Y/N)". If answer is CORRECT, do NOT ask - just give next exercise.'}
 
 Keep it SHORT and snappy. Use emojis.`,
-      
-      'vocabulary': `Teach ${selectedLanguage} vocabulary (${levels[proficiencyLevel]}). ${topicContext} Give 5 words with: word, IPA, example. Then ask user to make sentences. Keep feedback SHORT. Use emojis 📖`,
-      
-      'translation': `Translation drills for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give 3-5 sentences. Alternate directions. SHORT feedback with emojis ✓`,
-      
-      'listening': `Listening practice for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Describe a scenario, ask 2-3 questions. Keep it SHORT. Use emojis 👂`,
-      
-      'pronunciation': `Pronunciation for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give words with IPA, explain sounds BRIEFLY, practice. Use emojis 🗣️`,
-      
-      'articles': `Article gender trainer for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext}
+      vocabulary: `Teach ${selectedLanguage} vocabulary (${levels[proficiencyLevel]}). ${topicContext} Give 5 words with: word, IPA, example. Then ask user to make sentences. Keep feedback SHORT. Use emojis 📖`,
+      translation: `Translation drills for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give 3-5 sentences. Alternate directions. SHORT feedback with emojis ✓`,
+      listening: `Listening practice for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Describe a scenario, ask 2-3 questions. Keep it SHORT. Use emojis 👂`,
+      pronunciation: `Pronunciation for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give words with IPA, explain sounds BRIEFLY, practice. Use emojis 🗣️`,
+      articles: `Article gender trainer for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext}
 
 Rules for this game:
 - Give ONE noun (NO article, just the bare noun) per turn
@@ -252,10 +355,8 @@ Rules for this game:
   Hebrew: most nouns ending in ה or ת are feminine
 
 Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
-
-      'weakAreas': `Target weak areas in ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Focus on errors. SHORT exercises. Use emojis 🎯`
+      weakAreas: `Target weak areas in ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Focus on errors. SHORT exercises. Use emojis 🎯`,
     };
-    
     return modes[practiceMode] || '';
   };
 
@@ -266,46 +367,31 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
-        messages: messages,
-        system: getSystemPrompt()
-      })
+        messages,
+        system: getSystemPrompt(),
+      }),
     });
-
     if (!response.ok) throw new Error('API request failed');
     const data = await response.json();
-    return data.content.filter(item => item.type === 'text').map(item => item.text).join('\n');
+    return data.content.filter((item) => item.type === 'text').map((item) => item.text).join('\n');
   };
 
   const handleSendMessage = async () => {
     if (!userInput.trim() || !practiceMode) return;
 
-    // Check for drill mode commands (Y/N)
     const input = userInput.trim().toLowerCase();
     if (input === 'y' || input === 'yes') {
       setIsDrilling(true);
       setUserInput('');
-      
-      // Automatically trigger next drill question
       setIsLoading(true);
       try {
-        const drillPrompt = { 
-          role: 'user', 
-          content: 'Give me another practice sentence on this same concept.' 
-        };
-        const apiMessages = [...conversation.map(msg => ({
-          role: msg.role === 'assistant' ? 'assistant' : 'user',
-          content: msg.content
-        })), drillPrompt];
-        
+        const drillPrompt = { role: 'user', content: 'Give me another practice sentence on this same concept.' };
+        const apiMessages = [...conversation.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content })), drillPrompt];
         const response = await callClaudeAPI(apiMessages);
         setConversation([...conversation, drillPrompt, { role: 'assistant', content: response }]);
-        
-        // Extract sentence
         if (response.toLowerCase().includes('translate')) {
           const match = response.match(/"([^"]+)"/);
-          if (match && match[1]) {
-            setUsedSentences(prev => [...prev, match[1]].slice(-20));
-          }
+          if (match && match[1]) setUsedSentences((prev) => [...prev, match[1]].slice(-20));
         }
       } catch (error) {
         console.error('Drill error:', error);
@@ -318,28 +404,15 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       setIsDrilling(false);
       setDrillingContext('');
       setUserInput('');
-      
-      // Automatically trigger next normal question
       setIsLoading(true);
       try {
-        const nextPrompt = { 
-          role: 'user', 
-          content: 'Give me the next grammar exercise (different concept).' 
-        };
-        const apiMessages = [...conversation.map(msg => ({
-          role: msg.role === 'assistant' ? 'assistant' : 'user',
-          content: msg.content
-        })), nextPrompt];
-        
+        const nextPrompt = { role: 'user', content: 'Give me the next grammar exercise (different concept).' };
+        const apiMessages = [...conversation.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content })), nextPrompt];
         const response = await callClaudeAPI(apiMessages);
         setConversation([...conversation, nextPrompt, { role: 'assistant', content: response }]);
-        
-        // Extract sentence
         if (response.toLowerCase().includes('translate')) {
           const match = response.match(/"([^"]+)"/);
-          if (match && match[1]) {
-            setUsedSentences(prev => [...prev, match[1]].slice(-20));
-          }
+          if (match && match[1]) setUsedSentences((prev) => [...prev, match[1]].slice(-20));
         }
       } catch (error) {
         console.error('Next error:', error);
@@ -356,35 +429,23 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     setIsLoading(true);
 
     try {
-      const apiMessages = updated.map(msg => ({
-        role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content
-      }));
-      
+      const apiMessages = updated.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content }));
       const response = await callClaudeAPI(apiMessages);
       setConversation([...updated, { role: 'assistant', content: response }]);
-      
-      // Extract drilling context if error detected
+
       if (practiceMode === 'grammar' && !isDrilling && (response.toLowerCase().includes('correct') || response.toLowerCase().includes('mistake'))) {
-        // Extract the grammar concept from the response
-        const conceptMatch = response.match(/(?:concept|rule|point).*?:\s*([^\.]+)/i);
+        const conceptMatch = response.match(/(?:concept|rule|point).*?:\s*([^.]+)/i);
         if (conceptMatch) {
           setDrillingContext(conceptMatch[1]);
         } else {
-          // Fallback: use first sentence of explanation
-          const lines = response.split('\n').filter(l => l.trim());
-          if (lines.length > 0) {
-            setDrillingContext(lines[0].substring(0, 100));
-          }
+          const lines = response.split('\n').filter((l) => l.trim());
+          if (lines.length > 0) setDrillingContext(lines[0].substring(0, 100));
         }
       }
-      
-      // Extract and track English sentences to avoid repetition
+
       if (practiceMode === 'grammar' && response.toLowerCase().includes('translate')) {
         const match = response.match(/"([^"]+)"/);
-        if (match && match[1]) {
-          setUsedSentences(prev => [...prev, match[1]].slice(-20)); // Keep last 20
-        }
+        if (match && match[1]) setUsedSentences((prev) => [...prev, match[1]].slice(-20));
       }
     } catch (error) {
       console.error('API error:', error);
@@ -396,15 +457,12 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
 
   const handleStartPractice = async () => {
     if (!practiceMode) return;
-
     setConversation([]);
     setIsLoading(true);
     setSessionStartTime(Date.now());
-    setUsedSentences([]); // Clear used sentences for new session
-    setIsDrilling(false); // Reset drilling mode
+    setUsedSentences([]);
+    setIsDrilling(false);
     setDrillingContext('');
-    
-    // Update streak at start of session
     await updateStreak();
 
     const newSession = {
@@ -413,36 +471,31 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       mode: practiceMode,
       topic: topicFilter,
       level: proficiencyLevel,
-      duration: 0
+      duration: 0,
     };
-
     const updatedHistory = [newSession, ...practiceHistory].slice(0, 100);
     setPracticeHistory(updatedHistory);
     savePracticeHistory(updatedHistory);
 
     try {
       const prompts = {
-        'conversation': topicFilter === 'general' ? 'Start a conversation.' : `Talk about ${topicFilter}.`,
-        'grammar': 'Give me a grammar exercise.',
-        'vocabulary': 'Teach me new vocabulary.',
-        'translation': 'Give me translation exercises.',
-        'listening': 'Give me a listening exercise.',
-        'pronunciation': 'Help me with pronunciation.',
-        'articles': 'Start the article gender game. Give me the first noun.',
-        'weakAreas': 'Focus on my weak areas.'
+        conversation: topicFilter === 'general' ? 'Start a conversation.' : `Talk about ${topicFilter}.`,
+        grammar: 'Give me a grammar exercise.',
+        vocabulary: 'Teach me new vocabulary.',
+        translation: 'Give me translation exercises.',
+        listening: 'Give me a listening exercise.',
+        pronunciation: 'Help me with pronunciation.',
+        articles: 'Start the article gender game. Give me the first noun.',
+        weakAreas: 'Focus on my weak areas.',
       };
-      
       const response = await callClaudeAPI([{ role: 'user', content: prompts[practiceMode] }]);
       setConversation([{ role: 'assistant', content: response }]);
     } catch (error) {
       console.error('Start error:', error);
       let errorMsg = 'Error starting session.';
-      if (error.message.includes('rate')) {
-        errorMsg = 'Rate limit reached. Please wait a minute and try again.';
-      } else if (error.message.includes('network')) {
-        errorMsg = 'Network error. Please check your connection and try again.';
-      }
-      setConversation([{ role: 'assistant', content: errorMsg + ' (Error: ' + error.message + ')' }]);
+      if (error.message.includes('rate')) errorMsg = 'Rate limit reached. Please wait a minute and try again.';
+      else if (error.message.includes('network')) errorMsg = 'Network error. Please check your connection and try again.';
+      setConversation([{ role: 'assistant', content: `${errorMsg} (Error: ${error.message})` }]);
     } finally {
       setIsLoading(false);
     }
@@ -453,14 +506,11 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       setConversation([]);
       return;
     }
-
-    // Calculate session duration
     const minutes = Math.floor((Date.now() - sessionStartTime) / 60000);
     const newTotal = totalPracticeMinutes + minutes;
     setTotalPracticeMinutes(newTotal);
     localStorage.setItem('total-practice-time', newTotal.toString());
 
-    // Update session duration in history
     if (practiceHistory.length > 0) {
       const updated = [...practiceHistory];
       updated[0].duration = minutes;
@@ -468,8 +518,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       savePracticeHistory(updated);
     }
 
-    // Get grade from Claude
-    if (conversation.length > 2) { // Only grade if there was actual practice
+    if (conversation.length > 2) {
       setIsLoading(true);
       try {
         const gradePrompt = `Grade this ${selectedLanguage} session (${proficiencyLevel} level). Be BRIEF.
@@ -484,21 +533,12 @@ Format:
 • Score: X.XX/6.00
 • ALTE: XX
 • Feedback: [brief comment with emoji]`;
-
         const gradeResponse = await callClaudeAPI([
-          ...conversation.map(msg => ({
-            role: msg.role === 'assistant' ? 'assistant' : 'user',
-            content: msg.content
-          })),
-          { role: 'user', content: gradePrompt }
+          ...conversation.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content })),
+          { role: 'user', content: gradePrompt },
         ]);
-
         setConversation([...conversation, { role: 'assistant', content: gradeResponse }]);
         setIsLoading(false);
-        
-        // DON'T clear immediately - let user read the grade
-        // Session will stay active with grade visible
-        // User can start a new session when ready
         setSessionStartTime(null);
       } catch (error) {
         console.error('Grading error:', error);
@@ -507,7 +547,6 @@ Format:
         setSessionStartTime(null);
       }
     } else {
-      // No grade needed, just clear immediately
       setConversation([]);
       setSessionStartTime(null);
     }
@@ -518,31 +557,24 @@ Format:
     if (!word) return;
     const translation = prompt('Translation:') || '';
     const example = prompt('Example (optional):') || '';
-    
     const newVocab = {
-      id: Date.now(),
-      word,
-      translation,
-      example,
-      dateAdded: new Date().toISOString(),
-      nextReview: new Date().toISOString(),
-      reviewCount: 0
+      id: Date.now(), word, translation, example,
+      dateAdded: new Date().toISOString(), nextReview: new Date().toISOString(), reviewCount: 0,
     };
-    
     const updated = [...vocabularyList, newVocab];
     setVocabularyList(updated);
     saveVocabulary(updated);
   };
 
   const handleDeleteVocab = (id) => {
-    const updated = vocabularyList.filter(v => v.id !== id);
+    const updated = vocabularyList.filter((v) => v.id !== id);
     setVocabularyList(updated);
     saveVocabulary(updated);
   };
 
   const handleExportVocab = () => {
     const csv = 'Word,Translation,Example,Date\n' +
-      vocabularyList.map(v => `"${v.word}","${v.translation}","${v.example}","${new Date(v.dateAdded).toLocaleDateString()}"`).join('\n');
+      vocabularyList.map((v) => `"${v.word}","${v.translation}","${v.example}","${new Date(v.dateAdded).toLocaleDateString()}"`).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -554,443 +586,424 @@ Format:
   const languages = ['German', 'Spanish', 'Portuguese', 'French', 'Italian', 'Hebrew', 'Arabic', 'Mandarin Chinese', 'Japanese', 'Korean', 'Russian', 'Dutch', 'Swedish', 'Turkish', 'Polish'];
   const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
   const modes = [
-    { id: 'conversation', name: 'Conversation', icon: MessageSquare },
-    { id: 'grammar', name: 'Grammar', icon: GraduationCap },
-    { id: 'vocabulary', name: 'Vocabulary', icon: BookOpen },
-    { id: 'translation', name: 'Translation', icon: RefreshCw },
-    { id: 'articles', name: 'Article Gender', icon: Brain },
-    { id: 'listening', name: 'Listening', icon: Volume2 },
-    { id: 'pronunciation', name: 'Pronunciation', icon: Volume2 },
-    { id: 'weakAreas', name: 'Weak Areas', icon: Target }
+    { id: 'conversation', name: 'Conversation' },
+    { id: 'grammar', name: 'Grammar' },
+    { id: 'vocabulary', name: 'Vocabulary' },
+    { id: 'translation', name: 'Translation' },
+    { id: 'articles', name: 'Article Gender' },
+    { id: 'listening', name: 'Listening' },
+    { id: 'pronunciation', name: 'Pronunciation' },
+    { id: 'weakAreas', name: 'Weak Areas' },
   ];
   const topics = ['general', 'business', 'travel', 'culture', 'technology', 'food', 'sports', 'health', 'education', 'entertainment'];
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const modeName = (modes.find((m) => m.id === practiceMode) || {}).name || 'Practice';
+
+  const vars = theme === 'dark' ? DARK_VARS : LIGHT_VARS;
+
+  // ── Practice derived data ──
+  let lastAssistantIdx = -1;
+  for (let i = conversation.length - 1; i >= 0; i--) {
+    if (conversation[i].role === 'assistant') { lastAssistantIdx = i; break; }
+  }
+  const pinned = lastAssistantIdx >= 0 ? conversation[lastAssistantIdx] : null;
+  const transcript = conversation.filter((_, i) => i !== lastAssistantIdx);
+  const answersLogged = conversation.filter((m) => m.role === 'user').length;
+  const liveMin = getCurrentSessionMinutes();
+  const liveTime = `${String(Math.floor(liveMin / 60)).padStart(2, '0')}:${String(liveMin % 60).padStart(2, '0')}`;
+
+  // ── Vocabulary derived data ──
+  const masteredCount = vocabularyList.filter((v) => (v.reviewCount || 0) >= 5).length;
+  const dueCount = vocabularyList.filter((v) => dueStatus(v).due).length;
+  const filteredVocab = vocabularyList.filter((v) => {
+    if (vocabSearch) {
+      const q = vocabSearch.toLowerCase();
+      if (!`${v.word} ${v.translation}`.toLowerCase().includes(q)) return false;
+    }
+    if (vocabFilter === 'mastered') return (v.reviewCount || 0) >= 5;
+    if (vocabFilter === 'due') return dueStatus(v).due;
+    return true;
+  });
+
+  // ── Progress derived data ──
+  const wk = weeklyMinutes(practiceHistory);
+  const maxMin = Math.max(...wk.days.map((d) => d.min), 1);
+  const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+  const labelStyle = { font: "500 11px 'IBM Plex Sans'", color: 'var(--muted)', marginBottom: 6 };
 
   return (
     <PasswordGate>
-    <div className={`min-h-screen p-4 ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'}`}>
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className={`rounded-lg shadow-lg p-6 mb-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className={`text-3xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>D's Language Trainer v. 1.3 🧠🏋️</h1>
-              <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>AI-powered learning • Defaults to German C2 Grammar</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className={`px-4 py-2 rounded-md font-medium ${darkMode ? 'bg-gray-700 text-yellow-400' : 'bg-gray-200 text-gray-700'}`}
-                title="Toggle dark mode"
-              >
-                {darkMode ? '☀️' : '🌙'}
-              </button>
-              <div className="text-center">
-                <div className={`flex items-center gap-2 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>
-                  <Zap className="w-5 h-5" />
-                  <span className="text-2xl font-bold">{currentStreak}</span>
-                </div>
-                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>day streak</p>
-              </div>
-              <div className="text-center">
-                <div className={`flex items-center gap-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                  <Calendar className="w-5 h-5" />
-                  <span className="text-2xl font-bold">{totalPracticeMinutes + getCurrentSessionMinutes()}</span>
-                </div>
-                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>minutes{sessionStartTime ? ' (live)' : ''}</p>
+      <div
+        className="fluo-page"
+        style={{ ...vars, minHeight: '100vh', background: 'var(--page)', fontFamily: "'IBM Plex Sans',sans-serif", color: 'var(--ink)', padding: '30px 28px 60px', transition: 'background .25s' }}
+      >
+        <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+          {/* ===== HEADER ===== */}
+          <div className="fluo-header" style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 1px 3px var(--shadow)', padding: '24px 30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', fontFamily: "'Spectral',serif", fontWeight: 600, fontStyle: 'italic', fontSize: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 5px 18px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.28)', letterSpacing: '-0.02em' }}>F</div>
+              <div>
+                <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 23, letterSpacing: '-0.01em', color: 'var(--ink)' }}>Fluo</div>
+                <div style={{ font: "400 13px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 2 }}>AI-powered learning · {selectedLanguage} {proficiencyLevel} {modeName}</div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className={`rounded-lg shadow-lg p-4 mb-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-          <div className="flex gap-2 flex-wrap">
-            {['practice', 'vocabulary', 'progress'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-6 py-2 rounded-md font-medium ${
-                  activeTab === tab 
-                    ? 'bg-blue-600 text-white' 
-                    : darkMode 
-                      ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 20, color: 'var(--accent)' }}>{currentStreak}</div>
+                <div style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.1em', color: 'var(--muted)', textTransform: 'uppercase', marginTop: 4 }}>day streak</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 20, color: 'var(--ink)' }}>{totalPracticeMinutes + getCurrentSessionMinutes()}</div>
+                <div style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.1em', color: 'var(--muted)', textTransform: 'uppercase', marginTop: 4 }}>{sessionStartTime ? 'min · live' : 'minutes'}</div>
+              </div>
+              <button onClick={toggleTheme} title="Toggle theme" style={{ width: 44, height: 44, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--field)', color: 'var(--accent)', fontSize: 19, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {theme === 'dark' ? '☾' : '☀'}
               </button>
-            ))}
+            </div>
           </div>
-        </div>
 
-        {/* Practice Tab */}
-        {activeTab === 'practice' && (
-          <div className="grid grid-cols-1 sm:grid-cols-6 gap-6">
-            {/* Sidebar - Setup Controls */}
-            <div className={`sm:col-span-1 rounded-lg shadow-lg p-4 ${darkMode ? 'bg-gray-800' : 'bg-white'}`} style={{ height: 'fit-content' }}>
-              <h2 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : ''}`}>Setup</h2>
-              
-              <div className="space-y-3">
-                <div>
-                  <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-gray-300' : ''}`}>Language</label>
-                  <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)} className={`w-full px-3 py-2 border rounded-md text-sm ${darkMode ? 'bg-gray-700 text-white border-gray-600' : ''}`}>
-                    {languages.map(lang => <option key={lang} value={lang}>{lang}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-gray-300' : ''}`}>Level</label>
-                  <select value={proficiencyLevel} onChange={(e) => setProficiencyLevel(e.target.value)} className={`w-full px-3 py-2 border rounded-md text-sm ${darkMode ? 'bg-gray-700 text-white border-gray-600' : ''}`}>
-                    {levels.map(level => <option key={level} value={level}>{level}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-gray-300' : ''}`}>Topic</label>
-                  <select value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} className={`w-full px-3 py-2 border rounded-md text-sm ${darkMode ? 'bg-gray-700 text-white border-gray-600' : ''}`}>
-                    {topics.map(topic => <option key={topic} value={topic}>{topic.charAt(0).toUpperCase() + topic.slice(1)}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-gray-300' : ''}`}>Mode</label>
-                  <select value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} className={`w-full px-3 py-2 border rounded-md text-sm ${darkMode ? 'bg-gray-700 text-white border-gray-600' : ''}`}>
-                    <option value="">Select...</option>
-                    {modes.map(mode => <option key={mode.id} value={mode.id}>{mode.name}</option>)}
-                  </select>
-                </div>
-
+          {/* ===== TABS ===== */}
+          <div style={{ display: 'flex', gap: 6, background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, padding: 8 }}>
+            {[['practice', 'Practice'], ['vocabulary', 'Vocabulary'], ['progress', 'Progress']].map(([id, label]) => {
+              const active = activeTab === id;
+              return (
                 <button
-                  onClick={handleStartPractice}
-                  disabled={!practiceMode || isLoading}
-                  className="w-full bg-green-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-green-500 hover:scale-105 active:scale-95 active:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-150 text-sm shadow-md hover:shadow-lg"
+                  key={id}
+                  className="fluo-tab"
+                  onClick={() => setActiveTab(id)}
+                  style={{ position: 'relative', flex: '0 0 auto', border: 'none', borderRadius: 8, padding: '11px 22px', cursor: 'pointer', font: "600 14px 'IBM Plex Sans',sans-serif", background: active ? 'var(--accent)' : 'transparent', color: active ? 'var(--accent-ink)' : 'var(--muted)' }}
                 >
-                  {isLoading ? 'Starting...' : 'Start Session'}
+                  <span>{label}</span>
                 </button>
-                
-                {conversation.length > 0 && (
-                  <button 
-                    onClick={handleEndSession} 
-                    className={`w-full text-sm flex items-center justify-center gap-2 px-4 py-2 rounded-md ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} transition-colors`}
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    End Session
-                  </button>
-                )}
-              </div>
-            </div>
+              );
+            })}
+          </div>
 
-            {/* Main Practice Area */}
-            <div className={`sm:col-span-5 rounded-lg shadow-lg p-4 flex flex-col ${darkMode ? 'bg-gray-800' : 'bg-white'}`} style={{ maxHeight: 'calc(100vh - 220px)', minHeight: '500px' }}>
-              <div className="flex justify-between items-center mb-3">
-                <div>
-                  <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : ''}`}>Practice Session</h2>
-                  {isDrilling && (
-                    <span className={`text-sm ${darkMode ? 'text-orange-400' : 'text-orange-600'} font-medium`}>
-                      🎯 DRILLING MODE - Focused practice
-                    </span>
+          {/* ===== PRACTICE TAB ===== */}
+          {activeTab === 'practice' && (
+            <div className="fluo-practice" style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 2px 10px var(--shadow)', overflow: 'hidden', minHeight: 600 }}>
+              {/* setup rail */}
+              <div className="fluo-rail" style={{ flex: '0 0 252px', background: 'var(--panel-2)', borderRight: '1px solid var(--border)', padding: '24px 22px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 20 }}>Session setup</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
+                  <Select label="Language" value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)} options={languages.map((l) => ({ value: l, label: l }))} />
+                  <div style={{ display: 'flex', gap: 11 }}>
+                    <Select label="Level" value={proficiencyLevel} onChange={(e) => setProficiencyLevel(e.target.value)} options={levels.map((l) => ({ value: l, label: l }))} />
+                    <Select label="Mode" value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} options={modes.map((m) => ({ value: m.id, label: m.name }))} />
+                  </div>
+                  <Select label="Topic" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} options={topics.map((t) => ({ value: t, label: cap(t) }))} />
+                  <button
+                    onClick={handleStartPractice}
+                    disabled={!practiceMode || isLoading}
+                    style={{ width: '100%', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 14px 'IBM Plex Sans'", padding: '12px', borderRadius: 8, cursor: 'pointer', boxShadow: '0 4px 14px var(--accent-glow)' }}
+                  >
+                    {isLoading && conversation.length === 0 ? 'Starting…' : conversation.length > 0 ? 'Restart session' : 'Start session'}
+                  </button>
+                </div>
+                <div style={{ marginTop: 'auto', paddingTop: 22 }}>
+                  {sessionStartTime && (
+                    <div style={{ background: 'var(--green-bg)', border: '1px solid var(--green-border)', borderRadius: 9, padding: '13px 14px', marginBottom: 13 }}>
+                      <div style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--green)', marginBottom: 6 }}>● Live · {liveTime}</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--green-ink)' }}>{answersLogged} answer{answersLogged === 1 ? '' : 's'} · {cap(modeName.toLowerCase())}</div>
+                    </div>
+                  )}
+                  {conversation.length > 0 && (
+                    <div onClick={handleEndSession} style={{ textAlign: 'center', font: "500 13.5px 'IBM Plex Sans'", color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 7, padding: 11, cursor: 'pointer' }}>End session</div>
                   )}
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto mb-2 space-y-2">
-                {conversation.length === 0 && !isLoading ? (
-                  <div className={`py-8 flex items-center justify-center ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                    <p>Select mode and start a session</p>
-                  </div>
-                ) : conversation.length === 0 && isLoading ? (
-                  <div className={`py-8 flex items-center justify-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="flex space-x-2">
-                        <div className={`w-2 h-2 rounded-full animate-bounce ${darkMode ? 'bg-gray-400' : 'bg-gray-600'}`}></div>
-                        <div className={`w-2 h-2 rounded-full animate-bounce ${darkMode ? 'bg-gray-400' : 'bg-gray-600'}`} style={{ animationDelay: '0.1s' }}></div>
-                        <div className={`w-2 h-2 rounded-full animate-bounce ${darkMode ? 'bg-gray-400' : 'bg-gray-600'}`} style={{ animationDelay: '0.2s' }}></div>
-                      </div>
-                      <span>Starting session...</span>
+              {/* session column */}
+              <div className="fluo-session" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--panel-3)' }}>
+                {/* pinned exercise card */}
+                <div style={{ margin: '22px 26px 0', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 2px 8px var(--shadow)', padding: '24px 28px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)' }}>
+                      {isDrilling ? 'Drilling · ' : ''}{modeName} · {proficiencyLevel}{topicFilter !== 'general' ? ` · ${cap(topicFilter)}` : ''}
                     </div>
+                    {sessionStartTime && <div style={{ font: "500 10px/1 'IBM Plex Mono'", color: 'var(--muted)' }}>{liveTime}</div>}
                   </div>
-                ) : (
-                  <>
-                    {conversation.map((msg, idx) => (
-                      <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`w-full px-4 py-2 rounded-lg ${
-                          msg.role === 'user' 
-                            ? 'bg-blue-600 text-white' 
-                            : darkMode 
-                              ? 'bg-gray-700 text-gray-100' 
-                              : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          <div 
-                            className="whitespace-pre-wrap text-sm"
-                            dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-                          />
+                  {pinned ? (
+                    <div style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(pinned.content) }} />
+                  ) : isLoading ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)' }}><Bounce /> Preparing your first exercise…</div>
+                  ) : (
+                    <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, lineHeight: 1.34, color: 'var(--soft)', letterSpacing: '-0.01em' }}>
+                      Your exercise will appear here. Pick a mode on the left and start a session.
+                    </div>
+                  )}
+                </div>
+
+                {/* chat transcript */}
+                <div style={{ flex: 1, padding: '20px 26px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', maxHeight: 'calc(100vh - 360px)', minHeight: 140 }}>
+                  {transcript.map((msg, idx) => (
+                    msg.role === 'assistant' ? (
+                      <div key={idx} style={{ display: 'flex', gap: 12 }}>
+                        <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>T</div>
+                        <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '4px 12px 12px 12px', padding: '13px 16px', fontSize: 14, lineHeight: 1.55, color: 'var(--soft)', maxWidth: 560 }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                      </div>
+                    ) : (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <div style={{ background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '12px 12px 4px 12px', padding: '11px 15px', fontSize: 14, lineHeight: 1.5, maxWidth: 460 }}>{msg.content}</div>
+                      </div>
+                    )
+                  ))}
+                  {isLoading && conversation.length > 0 && (
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>T</div>
+                      <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '4px 12px 12px 12px', padding: '14px 16px' }}><Bounce /></div>
+                    </div>
+                  )}
+                  <div ref={conversationEndRef} />
+                </div>
+
+                {/* docked answer bar */}
+                <div style={{ padding: '16px 26px 22px', borderTop: '1px solid var(--border)', background: 'var(--panel)' }}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={userInput}
+                      onChange={(e) => setUserInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                      placeholder={conversation.length === 0 ? 'Start a session first…' : 'Type your answer…'}
+                      disabled={conversation.length === 0 || isLoading}
+                      style={{ flex: 1, background: 'var(--input)', border: '1.5px solid var(--border)', borderRadius: 9, padding: '14px 16px', minHeight: 50, color: 'var(--ink)', fontSize: 15, fontFamily: "'Spectral',serif", fontStyle: 'italic', outline: 'none' }}
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={!userInput.trim() || conversation.length === 0 || isLoading}
+                      style={{ flex: '0 0 auto', background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', font: "600 14px 'IBM Plex Sans'", padding: '14px 26px', borderRadius: 9, cursor: 'pointer', boxShadow: '0 4px 14px var(--accent-glow)' }}
+                    >
+                      Send
+                    </button>
+                  </div>
+                  <div style={{ font: "400 11px 'IBM Plex Mono'", color: 'var(--faint)', marginTop: 10 }}>↵ send · type "hint" for a nudge{practiceMode === 'grammar' ? ' · Y/N to drill' : ''}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== VOCABULARY TAB ===== */}
+          {activeTab === 'vocabulary' && (
+            <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 2px 10px var(--shadow)', padding: '28px 30px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                  <span style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 24, color: 'var(--ink)' }}>{selectedLanguage} Vocabulary</span>
+                  <span style={{ font: "500 12px 'IBM Plex Mono'", color: 'var(--muted)' }}>{vocabularyList.length} words</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ background: 'var(--field)', border: '1px solid var(--border)', borderRadius: 8, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
+                    <span style={{ color: 'var(--faint)' }}>⌕</span>
+                    <input
+                      value={vocabSearch}
+                      onChange={(e) => setVocabSearch(e.target.value)}
+                      placeholder="Search words…"
+                      style={{ border: 'none', background: 'transparent', padding: '9px 0', fontSize: 13, color: 'var(--ink)', outline: 'none', width: '100%', fontFamily: "'IBM Plex Sans',sans-serif" }}
+                    />
+                  </div>
+                  <button onClick={handleExportVocab} style={{ background: 'var(--field)', border: '1px solid var(--border)', color: 'var(--soft)', font: "500 13.5px 'IBM Plex Sans'", padding: '9px 16px', borderRadius: 8, cursor: 'pointer' }}>Export</button>
+                  <button onClick={handleAddVocab} style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', font: "600 13.5px 'IBM Plex Sans'", padding: '9px 18px', borderRadius: 8, cursor: 'pointer' }}>+ Add word</button>
+                </div>
+              </div>
+
+              {/* filter chips */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 22, flexWrap: 'wrap' }}>
+                {[['all', `All ${vocabularyList.length}`], ['due', `Due today · ${dueCount}`], ['mastered', `Mastered · ${masteredCount}`]].map(([id, label]) => {
+                  const active = vocabFilter === id;
+                  return (
+                    <span
+                      key={id}
+                      className="fluo-chip"
+                      onClick={() => setVocabFilter(id)}
+                      style={{ font: "500 12.5px 'IBM Plex Sans'", borderRadius: 20, padding: '7px 15px', background: active ? 'var(--accent)' : 'var(--field)', color: active ? 'var(--accent-ink)' : 'var(--soft)', border: active ? '1px solid var(--accent)' : '1px solid var(--border)' }}
+                    >
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* word grid */}
+              {filteredVocab.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--muted)', fontSize: 14 }}>
+                  {vocabularyList.length === 0 ? 'No vocabulary yet. Start a session to begin collecting words.' : 'No words match this filter.'}
+                </div>
+              ) : (
+                <div className="fluo-vocab-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {filteredVocab.map((v) => {
+                    const [article, base] = splitArticle(v.word);
+                    const mastery = Math.max(0, Math.min(5, v.reviewCount || 0));
+                    const mastered = mastery >= 5;
+                    const ds = dueStatus(v);
+                    return (
+                      <div key={v.id} className="fluo-vocab-card" style={{ position: 'relative', background: 'var(--panel-3)', border: '1px solid var(--border)', borderRadius: 11, padding: '18px 20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, gap: 10 }}>
+                          <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 21, color: 'var(--ink)' }}>
+                            {article && <span style={{ color: 'var(--accent)' }}>{article} </span>}{base}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
+                            {mastered && <span style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--green)', border: '1px solid var(--green-border)', background: 'var(--green-bg)', borderRadius: 4, padding: '5px 7px' }}>Mastered</span>}
+                            <button className="fluo-card-del" onClick={() => handleDeleteVocab(v.id)} title="Delete" style={{ background: 'transparent', border: 'none', color: 'var(--faint)', cursor: 'pointer', padding: 2, display: 'flex' }}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        {v.translation && <div style={{ fontSize: 14, color: 'var(--soft)', marginBottom: 10 }}>{v.translation}</div>}
+                        {v.example && <div style={{ fontFamily: "'Spectral',serif", fontStyle: 'italic', fontSize: 14.5, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 14 }}>"{v.example}"</div>}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: v.example || v.translation ? 0 : 12 }}>
+                          <Dots count={mastery} color={mastered ? 'var(--green)' : 'var(--accent)'} />
+                          <span style={{ font: "500 11px 'IBM Plex Mono'", color: mastered ? 'var(--green)' : ds.color }}>{mastered ? 'solid' : ds.label}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== PROGRESS TAB ===== */}
+          {activeTab === 'progress' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {/* stat row */}
+              <div className="fluo-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+                <StatCard value={practiceHistory.length} label="Total sessions" color="var(--accent)" />
+                <StatCard value={currentStreak} label="Day streak" color="var(--green)" />
+                <StatCard value={totalPracticeMinutes} suffix="min" label="Practice time" color="var(--ink)" />
+                <StatCard value={vocabularyList.length} label="Words learned" color="var(--ink)" />
+              </div>
+
+              {/* weekly activity */}
+              <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px var(--shadow)', padding: '16px 26px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>This week</div>
+                  <div style={{ font: "500 11px 'IBM Plex Mono'", color: 'var(--muted)' }}>{wk.total} min total</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, height: 64 }}>
+                  {wk.days.map((d, i) => {
+                    const isToday = i === wk.todayIdx;
+                    const has = d.min > 0;
+                    const h = has ? Math.max(12, Math.round((d.min / maxMin) * 100)) : 8;
+                    return (
+                      <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                        <div style={{
+                          width: '100%', maxWidth: 46, height: `${h}%`, borderRadius: '6px 6px 0 0',
+                          background: isToday && has ? 'var(--accent)' : has ? 'var(--accent-bg)' : 'var(--border-2)',
+                          border: has && !isToday ? '1px solid var(--accent)' : 'none',
+                        }} />
+                        <span style={{ font: `${isToday ? 600 : 500} 11px 'IBM Plex Mono'`, color: isToday ? 'var(--accent)' : 'var(--muted)' }}>{dayLabels[i]}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* two columns */}
+              <div className="fluo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                {/* recent sessions */}
+                <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px var(--shadow)', padding: '22px 24px' }}>
+                  <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 17, color: 'var(--ink)', marginBottom: 16 }}>Recent sessions</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
+                    {practiceHistory.length === 0 ? (
+                      <div style={{ color: 'var(--muted)', fontSize: 13, padding: '8px 0' }}>No sessions yet.</div>
+                    ) : practiceHistory.slice(0, 12).map((s) => (
+                      <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--panel-3)', border: '1px solid var(--border)', borderRadius: 9, padding: '13px 16px' }}>
+                        <div>
+                          <div style={{ font: "600 14px 'IBM Plex Sans'", color: 'var(--ink)', textTransform: 'capitalize' }}>{(modes.find((m) => m.id === s.mode) || { name: s.mode }).name}</div>
+                          <div style={{ font: "400 12px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 2 }}>{s.topic} · {s.level}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 16, color: s.duration ? 'var(--green)' : 'var(--muted)' }}>{s.duration || 0} min</div>
+                          <div style={{ font: "500 11px 'IBM Plex Mono'", color: 'var(--muted)', marginTop: 2 }}>{fmtDate(s.date)}</div>
                         </div>
                       </div>
                     ))}
-                    {isLoading && (
-                      <div className="flex justify-start">
-                        <div className={`px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                          <div className="flex space-x-2">
-                            <div className={`w-2 h-2 rounded-full animate-bounce ${darkMode ? 'bg-gray-400' : 'bg-gray-400'}`}></div>
-                            <div className={`w-2 h-2 rounded-full animate-bounce ${darkMode ? 'bg-gray-400' : 'bg-gray-400'}`} style={{ animationDelay: '0.1s' }}></div>
-                            <div className={`w-2 h-2 rounded-full animate-bounce ${darkMode ? 'bg-gray-400' : 'bg-gray-400'}`} style={{ animationDelay: '0.2s' }}></div>
-                          </div>
+                  </div>
+                </div>
+
+                {/* weak areas */}
+                <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px var(--shadow)', padding: '22px 24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>Weak areas</div>
+                    <button onClick={() => setShowErrorForm(true)} style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent)', color: 'var(--accent)', font: "500 12px 'IBM Plex Sans'", padding: '6px 12px', borderRadius: 7, cursor: 'pointer' }}>+ Add error</button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
+                    {commonErrors.length === 0 ? (
+                      <div style={{ color: 'var(--muted)', fontSize: 13, padding: '8px 0' }}>No mistakes logged yet. Grammar mode saves corrections automatically.</div>
+                    ) : commonErrors.slice(0, 12).map((err, idx) => (
+                      <div key={err.id || idx} style={{ background: 'var(--panel-3)', border: '1px solid var(--border)', borderRadius: 9, padding: '13px 16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5, gap: 10 }}>
+                          <span style={{ font: "600 14px 'IBM Plex Sans'", color: 'var(--ink)' }}>{err.explanation || `${err.mode || 'Mistake'} · ${err.level || ''}`}</span>
+                          <span style={{ font: "500 11px 'IBM Plex Mono'", color: 'var(--accent)', background: 'var(--accent-bg)', borderRadius: 5, padding: '3px 8px', flex: '0 0 auto', textTransform: 'capitalize' }}>{err.mode || 'manual'}</span>
+                        </div>
+                        <div style={{ font: "400 12.5px 'IBM Plex Sans'", color: 'var(--muted)' }}>
+                          <span style={{ textDecoration: 'line-through' }}>{err.original}</span>
+                          {' → '}
+                          <span style={{ color: 'var(--green)', fontStyle: 'italic', fontFamily: "'Spectral',serif" }}>{err.correct}</span>
                         </div>
                       </div>
-                    )}
-                    <div ref={conversationEndRef} />
-                  </>
-                )}
+                    ))}
+                  </div>
+                </div>
               </div>
+            </div>
+          )}
+        </div>
 
-              <div className="flex gap-2 mt-2">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={userInput}
-                  onChange={(e) => setUserInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder={conversation.length === 0 ? "Start a session first..." : "Type your response..."}
-                  disabled={conversation.length === 0 || isLoading}
-                  className={`flex-1 px-4 py-2 border rounded-md ${darkMode ? 'bg-gray-700 text-white border-gray-600 placeholder-gray-400' : ''}`}
-                />
+        {/* Error form modal */}
+        {showErrorForm && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }} onClick={() => setShowErrorForm(false)}>
+            <div style={{ ...vars, background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, padding: 28, maxWidth: 420, width: '100%' }} onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 19, color: 'var(--ink)', margin: '0 0 18px' }}>Add error manually</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {[['original', 'Your mistake', 'What did you write incorrectly?'], ['correct', 'Correct version', "What's the correct way to say it?"], ['explanation', 'Explanation', 'Why was it wrong?']].map(([key, label, ph]) => (
+                  <div key={key}>
+                    <div style={labelStyle}>{label}</div>
+                    <input
+                      type="text"
+                      value={newErrorData[key]}
+                      onChange={(e) => setNewErrorData({ ...newErrorData, [key]: e.target.value })}
+                      placeholder={ph}
+                      style={{ width: '100%', background: 'var(--input)', border: '1.5px solid var(--border)', borderRadius: 8, padding: '11px 13px', fontSize: 14, color: 'var(--ink)', outline: 'none', fontFamily: "'IBM Plex Sans',sans-serif" }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginTop: 22 }}>
                 <button
-                  onClick={handleSendMessage}
-                  disabled={!userInput.trim() || conversation.length === 0 || isLoading}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300"
+                  onClick={() => {
+                    if (!newErrorData.original || !newErrorData.correct || !newErrorData.explanation) {
+                      alert('Please fill in all fields');
+                      return;
+                    }
+                    const newError = {
+                      id: Date.now(), date: new Date().toISOString(), language: selectedLanguage,
+                      level: proficiencyLevel, mode: practiceMode || 'manual', ...newErrorData,
+                    };
+                    const updatedErrors = [newError, ...commonErrors].slice(0, 50);
+                    setCommonErrors(updatedErrors);
+                    localStorage.setItem(`errors-${selectedLanguage}`, JSON.stringify(updatedErrors));
+                    setNewErrorData({ original: '', correct: '', explanation: '' });
+                    setShowErrorForm(false);
+                  }}
+                  style={{ flex: 1, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 14px 'IBM Plex Sans'", padding: '11px', borderRadius: 8, cursor: 'pointer' }}
                 >
-                  <Send className="w-5 h-5" />
+                  Add error
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Vocabulary Tab */}
-        {activeTab === 'vocabulary' && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">{selectedLanguage} Vocabulary ({vocabularyList.length})</h2>
-              <div className="flex gap-2">
-                <button onClick={handleExportVocab} className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm flex items-center">
-                  <Download className="w-4 h-4 mr-1" />
-                  Export
-                </button>
-                <button onClick={handleAddVocab} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm">
-                  + Add Word
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {vocabularyList.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No vocabulary yet. Start learning!</p>
-              ) : (
-                vocabularyList.map(v => (
-                  <div key={v.id} className="p-4 bg-gray-50 rounded-md flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="font-bold text-lg">{v.word}</div>
-                      {v.translation && <div className="text-gray-700">{v.translation}</div>}
-                      {v.example && <div className="text-sm text-gray-600 italic mt-1">"{v.example}"</div>}
-                      <div className="text-xs text-gray-500 mt-2">Added: {new Date(v.dateAdded).toLocaleDateString()}</div>
-                    </div>
-                    <button onClick={() => handleDeleteVocab(v.id)} className="text-red-500 hover:text-red-700">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Progress Tab */}
-        {activeTab === 'progress' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className={`rounded-lg shadow-lg p-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <h2 className={`text-xl font-semibold mb-4 flex items-center ${darkMode ? 'text-white' : ''}`}>
-                  <TrendingUp className="w-5 h-5 mr-2" />
-                  Statistics
-                </h2>
-                <div className="space-y-4">
-                  <div className={`flex justify-between p-4 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-blue-50'}`}>
-                    <span className={darkMode ? 'text-gray-300' : ''}>Total Sessions</span>
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{practiceHistory.length}</span>
-                  </div>
-                  <div className={`flex justify-between p-4 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-green-50'}`}>
-                    <span className={darkMode ? 'text-gray-300' : ''}>Current Streak</span>
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>{currentStreak} days</span>
-                  </div>
-                  <div className={`flex justify-between p-4 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-purple-50'}`}>
-                    <span className={darkMode ? 'text-gray-300' : ''}>Practice Time</span>
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{totalPracticeMinutes} min</span>
-                  </div>
-                  <div className={`flex justify-between p-4 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-yellow-50'}`}>
-                    <span className={darkMode ? 'text-gray-300' : ''}>Vocabulary</span>
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`}>{vocabularyList.length}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className={`rounded-lg shadow-lg p-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <h2 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : ''}`}>Recent Sessions</h2>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {practiceHistory.slice(0, 20).map(session => (
-                    <div key={session.id} className={`p-3 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                      <div className="flex justify-between">
-                        <div>
-                          <p className={`font-semibold capitalize ${darkMode ? 'text-white' : ''}`}>{session.mode}</p>
-                          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{session.topic} • {session.level}</p>
-                        </div>
-                        <div className={`text-right text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          {new Date(session.date).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Weak Areas Flashcard Review */}
-            <div className={`rounded-lg shadow-lg p-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-              <div className="flex justify-between items-center mb-4">
-                <h2 className={`text-xl font-semibold flex items-center ${darkMode ? 'text-white' : ''}`}>
-                  <AlertCircle className="w-5 h-5 mr-2 text-orange-500" />
-                  Weak Areas - Review Your Mistakes 🎯
-                </h2>
                 <button
-                  onClick={() => setShowErrorForm(true)}
-                  className={`px-4 py-2 rounded-md text-sm font-medium ${darkMode ? 'bg-orange-600 hover:bg-orange-700' : 'bg-orange-500 hover:bg-orange-600'} text-white transition-colors`}
+                  onClick={() => { setNewErrorData({ original: '', correct: '', explanation: '' }); setShowErrorForm(false); }}
+                  style={{ flex: 1, background: 'var(--field)', color: 'var(--soft)', border: '1px solid var(--border)', font: "500 14px 'IBM Plex Sans'", padding: '11px', borderRadius: 8, cursor: 'pointer' }}
                 >
-                  + Add Error Manually
+                  Cancel
                 </button>
               </div>
-
-              {/* Error Form Modal */}
-              {showErrorForm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowErrorForm(false)}>
-                  <div className={`rounded-lg p-6 max-w-md w-full mx-4 ${darkMode ? 'bg-gray-800' : 'bg-white'}`} onClick={(e) => e.stopPropagation()}>
-                    <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : ''}`}>Add Error Manually</h3>
-                    
-                    <div className="space-y-3">
-                      <div>
-                        <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : ''}`}>Your mistake:</label>
-                        <input
-                          type="text"
-                          value={newErrorData.original}
-                          onChange={(e) => setNewErrorData({...newErrorData, original: e.target.value})}
-                          className={`w-full px-3 py-2 border rounded-md ${darkMode ? 'bg-gray-700 text-white border-gray-600' : ''}`}
-                          placeholder="What did you write incorrectly?"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : ''}`}>Correct version:</label>
-                        <input
-                          type="text"
-                          value={newErrorData.correct}
-                          onChange={(e) => setNewErrorData({...newErrorData, correct: e.target.value})}
-                          className={`w-full px-3 py-2 border rounded-md ${darkMode ? 'bg-gray-700 text-white border-gray-600' : ''}`}
-                          placeholder="What's the correct way to say it?"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : ''}`}>Explanation:</label>
-                        <input
-                          type="text"
-                          value={newErrorData.explanation}
-                          onChange={(e) => setNewErrorData({...newErrorData, explanation: e.target.value})}
-                          className={`w-full px-3 py-2 border rounded-md ${darkMode ? 'bg-gray-700 text-white border-gray-600' : ''}`}
-                          placeholder="Why was it wrong?"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="flex gap-3 mt-6">
-                      <button
-                        onClick={() => {
-                          if (!newErrorData.original || !newErrorData.correct || !newErrorData.explanation) {
-                            alert('Please fill in all fields');
-                            return;
-                          }
-                          
-                          const newError = {
-                            id: Date.now(),
-                            date: new Date().toISOString(),
-                            language: selectedLanguage,
-                            level: proficiencyLevel,
-                            mode: practiceMode || 'manual',
-                            ...newErrorData
-                          };
-                          
-                          const updatedErrors = [newError, ...commonErrors].slice(0, 50);
-                          setCommonErrors(updatedErrors);
-                          
-                          localStorage.setItem(`errors-${selectedLanguage}`, JSON.stringify(updatedErrors));
-                          
-                          setNewErrorData({ original: '', correct: '', explanation: '' });
-                          setShowErrorForm(false);
-                        }}
-                        className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-md font-medium"
-                      >
-                        Add Error
-                      </button>
-                      <button
-                        onClick={() => {
-                          setNewErrorData({ original: '', correct: '', explanation: '' });
-                          setShowErrorForm(false);
-                        }}
-                        className={`flex-1 px-4 py-2 rounded-md font-medium ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                Grammar mode saves corrections automatically. Or add errors manually for review!
-              </p>
-              
-              {commonErrors.length === 0 ? (
-                <div className={`text-center py-12 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                  <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No errors logged yet. Start practicing or add errors manually!</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {commonErrors.slice(0, 12).map((error, idx) => (
-                    <div key={idx} className={`p-4 rounded-lg border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-red-50 border-red-200'}`}>
-                      <div className="mb-2">
-                        <span className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {error.mode} • {new Date(error.date).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        <div>
-                          <p className={`text-xs font-semibold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>❌ Your mistake:</p>
-                          <p className={`text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>{error.original}</p>
-                        </div>
-                        <div>
-                          <p className={`text-xs font-semibold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>✓ Correct:</p>
-                          <p className={`text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>{error.correct}</p>
-                        </div>
-                        <div>
-                          <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} italic`}>💡 {error.explanation}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         )}
       </div>
-    </div>
     </PasswordGate>
   );
 }

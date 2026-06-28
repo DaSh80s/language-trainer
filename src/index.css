@@ -1,3 +1,27 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Fluo design system ──────────────────────────────────────────────────── */
+::selection { background: var(--accent-bg, rgba(194, 96, 60, 0.22)); }
+
+.fluo-page select option { color: #211d18; }
+
+/* Practice screen: two columns on desktop/tablet, stacked on phones */
+.fluo-practice { display: flex; }
+@media (max-width: 760px) {
+  .fluo-page { padding: 18px 16px 48px !important; }
+  .fluo-practice { flex-direction: column; }
+  .fluo-rail { flex: 1 1 auto !important; border-right: none !important; border-bottom: 1px solid var(--border); }
+  .fluo-stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .fluo-vocab-grid { grid-template-columns: 1fr !important; }
+  .fluo-two-col { grid-template-columns: 1fr !important; }
+  .fluo-header { flex-wrap: wrap; gap: 14px; }
+}
+
+/* Hover affordances kept light so they read in both themes */
+.fluo-tab:hover span { opacity: 0.85; }
+.fluo-chip { cursor: pointer; }
+.fluo-card-del { opacity: 0; transition: opacity 0.15s; }
+.fluo-vocab-card:hover .fluo-card-del { opacity: 1; }
+button:disabled { cursor: not-allowed !important; opacity: 0.55; }
