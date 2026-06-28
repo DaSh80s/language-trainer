@@ -644,12 +644,6 @@ Format:
   const vars = theme === 'dark' ? DARK_VARS : LIGHT_VARS;
 
   // ── Practice derived data ──
-  let lastAssistantIdx = -1;
-  for (let i = conversation.length - 1; i >= 0; i--) {
-    if (conversation[i].role === 'assistant') { lastAssistantIdx = i; break; }
-  }
-  const pinned = lastAssistantIdx >= 0 ? conversation[lastAssistantIdx] : null;
-  const transcript = conversation.filter((_, i) => i !== lastAssistantIdx);
   const answersLogged = conversation.filter((m) => m.role === 'user').length;
   const liveMin = getCurrentSessionMinutes();
   const liveTime = `${String(Math.floor(liveMin / 60)).padStart(2, '0')}:${String(liveMin % 60).padStart(2, '0')}`;
@@ -759,46 +753,48 @@ Format:
 
               {/* session column */}
               <div className="fluo-session" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--panel-3)' }}>
-                {/* pinned exercise card */}
-                <div style={{ margin: '22px 26px 0', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 2px 8px var(--shadow)', padding: '24px 28px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                {/* session context strip (thin, non-pinned) */}
+                {conversation.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 26px', borderBottom: '1px solid var(--border)', flex: '0 0 auto' }}>
                     <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)' }}>
                       {isDrilling ? 'Drilling · ' : ''}{modeName} · {proficiencyLevel}{topicFilter !== 'general' ? ` · ${cap(topicFilter)}` : ''}
                     </div>
-                    {sessionStartTime && <div style={{ font: "500 10px/1 'IBM Plex Mono'", color: 'var(--muted)' }}>{liveTime}</div>}
+                    {sessionStartTime && <div style={{ font: "500 10px/1 'IBM Plex Mono'", color: 'var(--muted)' }}>● {liveTime}</div>}
                   </div>
-                  {pinned ? (
-                    <div style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(pinned.content) }} />
-                  ) : isLoading ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)' }}><Bounce /> Preparing your first exercise…</div>
-                  ) : (
-                    <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, lineHeight: 1.34, color: 'var(--soft)', letterSpacing: '-0.01em' }}>
-                      Your exercise will appear here. Pick a mode on the left and start a session.
-                    </div>
-                  )}
-                </div>
+                )}
 
-                {/* chat transcript */}
-                <div style={{ flex: 1, padding: '20px 26px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', maxHeight: 'calc(100vh - 360px)', minHeight: 140 }}>
-                  {transcript.map((msg, idx) => (
-                    msg.role === 'assistant' ? (
-                      <div key={idx} style={{ display: 'flex', gap: 12 }}>
-                        <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>T</div>
-                        <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '4px 12px 12px 12px', padding: '13px 16px', fontSize: 14, lineHeight: 1.55, color: 'var(--soft)', maxWidth: 560 }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                      </div>
-                    ) : (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <div style={{ background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '12px 12px 4px 12px', padding: '11px 15px', fontSize: 14, lineHeight: 1.5, maxWidth: 460 }}>{msg.content}</div>
-                      </div>
-                    )
-                  ))}
-                  {isLoading && conversation.length > 0 && (
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>T</div>
-                      <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '4px 12px 12px 12px', padding: '14px 16px' }}><Bounce /></div>
+                {/* chat (chronological: oldest → newest, scrolls to bottom) */}
+                <div style={{ flex: 1, padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', maxHeight: 'calc(100vh - 300px)', minHeight: 340 }}>
+                  {conversation.length === 0 && !isLoading ? (
+                    <div style={{ margin: 'auto', textAlign: 'center', maxWidth: 360 }}>
+                      <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, color: 'var(--soft)', lineHeight: 1.34 }}>Ready when you are.</div>
+                      <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>Pick a mode on the left, then press Start session.</div>
                     </div>
+                  ) : conversation.length === 0 && isLoading ? (
+                    <div style={{ margin: 'auto', display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)' }}><Bounce /> Preparing your first exercise…</div>
+                  ) : (
+                    <>
+                      {conversation.map((msg, idx) => (
+                        msg.role === 'assistant' ? (
+                          <div key={idx} style={{ display: 'flex', gap: 12 }}>
+                            <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>T</div>
+                            <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '4px 14px 14px 14px', padding: '14px 17px', fontSize: 14.5, lineHeight: 1.6, color: 'var(--soft)', maxWidth: 620 }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                          </div>
+                        ) : (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <div style={{ background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '14px 14px 4px 14px', padding: '12px 16px', fontSize: 14.5, lineHeight: 1.5, maxWidth: 520, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                          </div>
+                        )
+                      ))}
+                      {isLoading && (
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                          <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>T</div>
+                          <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '4px 14px 14px 14px', padding: '14px 17px' }}><Bounce /></div>
+                        </div>
+                      )}
+                      <div ref={conversationEndRef} />
+                    </>
                   )}
-                  <div ref={conversationEndRef} />
                 </div>
 
                 {/* docked answer bar */}
