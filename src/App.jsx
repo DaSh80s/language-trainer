@@ -204,6 +204,7 @@ export default function LanguagePracticeApp() {
 
   const conversationEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     loadAllData();
@@ -583,6 +584,47 @@ Format:
     a.click();
   };
 
+  // Full backup/restore of ALL app data (localStorage). Used to migrate data
+  // between domains, since localStorage is scoped per-origin.
+  const handleBackup = () => {
+    const data = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      data[k] = localStorage.getItem(k);
+    }
+    const payload = { _fluoBackup: 1, exportedAt: new Date().toISOString(), data };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fluo-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestoreFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const data = parsed && parsed._fluoBackup ? parsed.data : parsed;
+        if (!data || typeof data !== 'object') throw new Error('bad format');
+        const keys = Object.keys(data);
+        if (!keys.length) throw new Error('empty');
+        if (!window.confirm(`Restore ${keys.length} data entries from this backup? This overwrites the data currently saved on this site.`)) return;
+        keys.forEach((k) => localStorage.setItem(k, typeof data[k] === 'string' ? data[k] : JSON.stringify(data[k])));
+        window.alert('Backup restored. Reloading…');
+        window.location.reload();
+      } catch (err) {
+        window.alert('Could not read that file — make sure it is a Fluo backup (.json).');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const languages = ['German', 'Spanish', 'Portuguese', 'French', 'Italian', 'Hebrew', 'Arabic', 'Mandarin Chinese', 'Japanese', 'Korean', 'Russian', 'Dutch', 'Swedish', 'Turkish', 'Polish'];
   const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
   const modes = [
@@ -947,6 +989,21 @@ Format:
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+
+              {/* data backup / restore */}
+              <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px var(--shadow)', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
+                <div>
+                  <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>Data backup</div>
+                  <div style={{ font: "400 12.5px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 4, maxWidth: 540, lineHeight: 1.5 }}>
+                    Save or restore a full backup of your vocabulary, streak, history, weak areas and settings. Your data lives in this browser — use this to keep a copy or to move everything if the app's web address changes.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, flex: '0 0 auto' }}>
+                  <button onClick={handleBackup} style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', font: "600 13.5px 'IBM Plex Sans'", padding: '9px 18px', borderRadius: 8, cursor: 'pointer' }}>Back up</button>
+                  <button onClick={() => fileInputRef.current?.click()} style={{ background: 'var(--field)', border: '1px solid var(--border)', color: 'var(--soft)', font: "500 13.5px 'IBM Plex Sans'", padding: '9px 18px', borderRadius: 8, cursor: 'pointer' }}>Restore</button>
+                  <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleRestoreFile} style={{ display: 'none' }} />
                 </div>
               </div>
             </div>
