@@ -23,16 +23,36 @@ const PROVIDERS = {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature, maxOutputTokens: Math.ceil(maxWords * 3) + 120 },
+            generationConfig: { temperature, maxOutputTokens: Math.ceil(maxWords * 3) + 1200 },
           }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         },
       );
       if (!response.ok) throw new Error(`Gemini HTTP ${response.status}: ${await response.text()}`);
+
       const payload = await response.json();
-      const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text).join('') ?? '';
-      if (!text.trim()) throw new Error('Gemini returned no text');
-      return text;
+      const candidate = payload.candidates?.[0];
+      const parts = candidate?.content?.parts ?? [];
+
+      // Only real answer parts: a thought part carries reasoning, not output,
+      // and concatenating it corrupts the text.
+      const text = parts
+        .filter((part) => typeof part.text === 'string' && part.thought !== true)
+        .map((part) => part.text)
+        .join('');
+
+      if (!text.trim()) {
+        throw new Error(`Gemini returned no text (finishReason=${candidate?.finishReason ?? 'none'})`);
+      }
+      return {
+        text,
+        meta: {
+          finishReason: candidate?.finishReason,
+          parts: parts.length,
+          thoughtParts: parts.filter((part) => part.thought === true).length,
+          chars: text.length,
+        },
+      };
     },
   },
 
@@ -58,7 +78,7 @@ const PROVIDERS = {
       const payload = await response.json();
       const text = payload.choices?.[0]?.message?.content ?? '';
       if (!text.trim()) throw new Error('Groq returned no text');
-      return text;
+      return { text, meta: { finishReason: payload.choices?.[0]?.finish_reason, chars: text.length } };
     },
   },
 
@@ -87,7 +107,7 @@ const PROVIDERS = {
       const payload = await response.json();
       const text = payload.result?.response ?? '';
       if (!text.trim()) throw new Error('Cloudflare returned no text');
-      return text;
+      return { text, meta: { chars: text.length } };
     },
   },
 };
@@ -161,10 +181,18 @@ export async function generateProse({
     }
 
     try {
-      const text = await provider.call({
+      const result = await provider.call({
         prompt, env, temperature: config.llm.temperature, maxWords, fetchImpl,
       });
-      return { text: text.trim(), provider: provider.label, usedFallback: false, attempts };
+      const text = typeof result === 'string' ? result : result.text;
+      const meta = typeof result === 'string' ? {} : result.meta ?? {};
+
+      if (meta.finishReason && meta.finishReason !== 'STOP' && meta.finishReason !== 'stop') {
+        logger.warn?.(`${provider.label} finished with ${meta.finishReason}; output may be incomplete.`);
+      }
+      return {
+        text: text.trim(), provider: provider.label, usedFallback: false, attempts, meta,
+      };
     } catch (error) {
       attempts.push(`${name}: ${error.message.slice(0, 200)}`);
       logger.warn?.(`LLM provider ${name} failed: ${error.message.slice(0, 200)}`);

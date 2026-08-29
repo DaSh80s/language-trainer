@@ -372,6 +372,11 @@ export async function writeProse(facts, config) {
     `Prose: nutrition=${nutrition.provider}, progress=${progress.provider}, `
     + `meetings=${meetings.provider}, tasks=${tasks.provider}`,
   );
+  for (const [name, result] of Object.entries({ nutrition, progress, meetings, tasks })) {
+    if (!result.usedFallback) {
+      logger.info(`  ${name}: ${JSON.stringify(result.meta ?? {})} -> ${JSON.stringify(result.text.slice(0, 60))}`);
+    }
+  }
   if (nutrition.usedFallback && nutrition.attempts?.length) {
     logger.warn(`LLM providers were not used. Why: ${nutrition.attempts.join(' ; ')}`);
   }
