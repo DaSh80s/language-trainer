@@ -268,7 +268,9 @@ async function commandDiscover(config, client) {
     const database = await client.getDatabase(config.weeklyJournal.databaseId);
     const property = database.properties?.[config.weeklyJournal.tagsProperty];
     const options = property?.multi_select?.options ?? property?.select?.options ?? [];
-    logger.info(`${options.length} option(s): ${options.map((option) => option.name).join(' | ')}`);
+    const names = options.map((option) => option.name);
+    const shown = names.slice(0, 40).join(' | ');
+    logger.info(`${names.length} option(s). First 40: ${shown}${names.length > 40 ? ' ...' : ''}`);
   } catch (error) {
     logger.error(`Could not read the tag vocabulary: ${error.message}`);
   }

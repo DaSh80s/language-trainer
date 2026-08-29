@@ -2,18 +2,16 @@
   "timezone": "Europe/Zurich",
   "locale": "en-GB",
   "weeklyJournal": {
-    "_comment": "Review pages are identified by tag. The handoff's 'Weekly journal' does not exist in this workspace; candidates below are tried in order.",
-    "databaseId": "102c8a95-6a83-4675-a369-f00addeb95d6",
-    "titleProperty": "Name",
-    "dateProperty": null,
+    "_comment": "The review pages live in the Journals database, not Notes. Its title property is 'text' (e.g. 'Weekly review, @Today') and it has a real 'date' property, so the page for a given Saturday can be found by date plus tag.",
+    "databaseId": "1212eaed-6ca5-47c3-8c6a-4fdb989a7287",
+    "titleProperty": "text",
+    "dateProperty": "date",
     "tagsProperty": "Tags",
-    "weekProperty": null,
-    "yearProperty": "Year",
     "tagValues": [
-      "Reviews",
-      "Journals",
       "Weekly journal"
-    ]
+    ],
+    "yearProperty": null,
+    "weekProperty": null
   },
   "foodLog": {
     "databaseId": "382ee9fd-1543-8173-9181-c53d205152aa",
