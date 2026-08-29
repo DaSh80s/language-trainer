@@ -36,6 +36,15 @@ function date(value) {
 function select(value) {
   return { type: 'select', select: value === null ? null : { name: value } };
 }
+function multiSelect(values) {
+  return { type: 'multi_select', multi_select: values.map((name) => ({ name })) };
+}
+function checkbox(value) {
+  return { type: 'checkbox', checkbox: value };
+}
+function relation(ids) {
+  return { type: 'relation', relation: ids.map((id) => ({ id })) };
+}
 
 function page(properties, createdDay) {
   return {
@@ -92,46 +101,41 @@ function weightRows() {
   }, day));
 }
 
+const PROJECT_IDS = new Map();
+
+/**
+ * Mirrors the real All tasks schema: the title is "Task", completion is a
+ * checkbox whose name carries an invisible prefix, the project is a relation,
+ * and priority comes from the Eisenhower multi-select.
+ */
+function task(name, due, project, { done = false, priority = null } = {}) {
+  if (!PROJECT_IDS.has(project)) PROJECT_IDS.set(project, `project-${PROJECT_IDS.size + 1}`);
+
+  const properties = {
+    Task: title(name),
+    Due: date(due),
+    '\uFEFFDone': checkbox(done),
+    Project: relation([PROJECT_IDS.get(project)]),
+  };
+  if (priority) properties['Do, delete, delegate, automate'] = multiSelect([priority]);
+  return page(properties, '2026-08-20');
+}
+
+export function projectTitleFor(id) {
+  return [...PROJECT_IDS.entries()].find(([, value]) => value === id)?.[0] ?? null;
+}
+
 function taskRows() {
   return [
-    page({
-      Name: title('Week 4: 7-day average weight at or below 80.1 kg'),
-      Due: date('2026-09-06'), Status: select('Not started'), Project: select('Weight goal'),
-    }, '2026-08-01'),
-    page({
-      Name: title('Week 3: 7-day average weight at or below 80.7 kg'),
-      Due: date('2026-08-28'), Status: select('Not started'), Project: select('Weight goal'),
-    }, '2026-08-01'),
-    page({
-      Name: title('Send Q4 pricing proposal to Novartis'),
-      Due: date('2026-09-02'), Status: select('In progress'), Project: select('Client development'),
-      Priority: select('High'),
-    }, '2026-08-20'),
-    page({
-      Name: title('Sign off new consultant contracts'),
-      Due: date('2026-08-27'), Status: select('In progress'), Project: select('Operations'),
-      Priority: select('High'),
-    }, '2026-08-14'),
-    page({
-      Name: title('Review candidate shortlist for CFO search'),
-      Due: date('2026-09-03'), Status: select('Not started'), Project: select('CFO search'),
-    }, '2026-08-22'),
-    page({
-      Name: title('Prepare board pack'),
-      Due: date('2026-09-04'), Status: select('Not started'), Project: select('Operations'),
-    }, '2026-08-25'),
-    page({
-      Name: title('Daily check email triage'),
-      Due: date('2026-09-01'), Status: select('Not started'), Project: select('Operations'),
-    }, '2026-08-25'),
-    page({
-      Name: title('Weekly timesheet approval'),
-      Due: date('2026-09-04'), Status: select('Not started'), Project: select('Operations'),
-    }, '2026-08-25'),
-    page({
-      Name: title('Already finished thing'),
-      Due: date('2026-09-01'), Status: select('Done'), Project: select('Operations'),
-    }, '2026-08-25'),
+    task('Week 4: 7-day average weight at or below 80.1 kg', '2026-09-06', 'Weight goal'),
+    task('Week 3: 7-day average weight at or below 80.7 kg', '2026-08-28', 'Weight goal'),
+    task('Send Q4 pricing proposal to Novartis', '2026-09-02', 'Client development', { priority: 'Do' }),
+    task('Sign off new consultant contracts', '2026-08-27', 'Operations', { priority: 'Do' }),
+    task('Review candidate shortlist for CFO search', '2026-09-03', 'CFO search'),
+    task('Prepare board pack', '2026-09-04', 'Operations'),
+    task('Daily check email triage', '2026-09-01', 'Operations'),
+    task('Weekly timesheet approval', '2026-09-04', 'Operations'),
+    task('Already finished thing', '2026-09-01', 'Operations', { done: true }),
   ];
 }
 
@@ -185,7 +189,7 @@ export function createFakeNotionFetch({ onRequest } = {}) {
       return ok({
         object: 'page',
         id,
-        properties: { Name: title(NOTE_TITLES[id] ?? 'Untitled') },
+        properties: { Name: title(projectTitleFor(id) ?? NOTE_TITLES[id] ?? 'Untitled') },
         last_edited_time: '2026-08-12T10:00:00.000Z',
       });
     }

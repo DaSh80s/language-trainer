@@ -15,7 +15,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { loadConfig, loadDotEnv, loadFeedsFromEnv, packageRoot } from './config.js';
-import { NotionClient, readMultiSelectNames, readSelectName, readTitle, richTextToPlain } from './notion.js';
+import { NotionClient, readMultiSelectNames, readNumber, readSelectName, readTitle, richTextToPlain } from './notion.js';
 import { resolveTargets } from './targets.js';
 import { computeNutrition, parseMilestones, parseWeightEntries, reviewWindow, summariseFood, summariseWeight } from './nutrition.js';
 import { computeProgress } from './progress.js';
@@ -116,6 +116,33 @@ async function commandDiscover(config, client) {
       }
     } catch (error) {
       logger.error(`Could not read: ${error.message}`);
+    }
+  }
+
+  // Schemas alone do not show how a review page is identified, so show rows.
+  const journal = config.weeklyJournal;
+  if (journal.databaseId && journal.databaseId !== 'REPLACE_ME') {
+    logger.info(`\n=== Sample "${journal.tagValue}" pages ===`);
+    try {
+      const rows = await client.queryDatabase(journal.databaseId, {
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+        maxPages: 3,
+      });
+      const tagged = rows.filter(isWeeklyJournalPage(config));
+      logger.info(`${tagged.length} of ${rows.length} recent rows carry the tag.`);
+
+      for (const page of tagged.slice(0, 8)) {
+        const parts = [
+          `"${readTitle(page)}"`,
+          `created ${page.created_time?.slice(0, 10)}`,
+          `tags=[${readMultiSelectNames(page, journal.tagsProperty).join(', ')}]`,
+        ];
+        if (journal.weekProperty) parts.push(`${journal.weekProperty}=${readNumber(page, journal.weekProperty)}`);
+        if (journal.yearProperty) parts.push(`${journal.yearProperty}=${readSelectName(page, journal.yearProperty)}`);
+        logger.info(`  - ${parts.join(' | ')}`);
+      }
+    } catch (error) {
+      logger.error(`Could not sample rows: ${error.message}`);
     }
   }
 
@@ -271,10 +298,19 @@ async function findReviewPage(client, config, referenceDay, explicitPageId) {
     );
   }
 
-  const { rows } = await safeQuery(client, databaseId, {
-    label: 'weekly journal',
-    filter: { property: dateProperty, date: { equals: referenceDay } },
-  });
+  // The Notes database has no date property, so a date filter is only used
+  // when one is actually configured; otherwise the tag does the work.
+  const { rows } = dateProperty
+    ? await safeQuery(client, databaseId, {
+      label: 'weekly journal',
+      filter: { property: dateProperty, date: { equals: referenceDay } },
+    })
+    : {
+      rows: await client.queryDatabase(databaseId, {
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+        maxPages: 3,
+      }),
+    };
 
   // The review pages share the Notes database with everything else, so the tag
   // is what separates them. Checked here rather than in the query because the

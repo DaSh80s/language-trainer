@@ -2,12 +2,14 @@
   "timezone": "Europe/Zurich",
   "locale": "en-GB",
   "weeklyJournal": {
-    "_comment": "The weekly-review pages are NOT in a database of their own: they live in the Notes database and are identified by the Tags property. Confirm the property names with `npm run discover`.",
+    "_comment": "Review pages live in the Notes database, identified by Tags. That database has no date property, so dateProperty is null and pages are matched by tag; weekProperty/yearProperty narrow it to the right week when present.",
     "databaseId": "102c8a95-6a83-4675-a369-f00addeb95d6",
     "titleProperty": "Name",
-    "dateProperty": "Date",
+    "dateProperty": null,
     "tagsProperty": "Tags",
-    "tagValue": "Weekly journal"
+    "tagValue": "Weekly journal",
+    "weekProperty": "Number",
+    "yearProperty": "Year"
   },
   "foodLog": {
     "databaseId": "382ee9fd-1543-8173-9181-c53d205152aa",
@@ -28,17 +30,18 @@
     "filterProperty": "Logged for"
   },
   "weightLog": {
-    "_comment": "Weight entries currently live as Notes pages titled like '80.8 kg - 28 August 2026'. If you migrate to a real database with a numeric property, set numberProperty and dateProperty and titles stop being parsed.",
+    "_comment": "The Notes database has no date property, so weight entry dates are parsed from the page title, e.g. '80.8 kg - 28 August 2026'.",
     "databaseId": "102c8a95-6a83-4675-a369-f00addeb95d6",
     "titleContains": "kg",
     "numberProperty": null,
     "dateProperty": null,
-    "trendWindowDays": 28
+    "trendWindowDays": 28,
+    "titleProperty": "Name"
   },
   "tasks": {
     "databaseId": "46573cd6-3efc-4609-8584-803f98e3db85",
     "dueProperty": "Due",
-    "statusProperty": "Status",
+    "statusProperty": null,
     "doneStatuses": [
       "Done",
       "Complete",
@@ -46,8 +49,10 @@
       "Archived"
     ],
     "projectProperty": "Project",
-    "priorityProperty": "Priority",
+    "priorityProperty": "Do, delete, delegate, automate",
     "highPriorityValues": [
+      "Do",
+      "Do first",
       "High",
       "Urgent",
       "P1"
@@ -59,7 +64,9 @@
       "routine",
       "check email",
       "timesheet"
-    ]
+    ],
+    "_comment": "Verified against the live database. There is no Status or Priority property: completion is the 'Done' checkbox (whose real name carries an invisible prefix, handled in code), and priority comes from the Eisenhower multi-select.",
+    "doneProperty": "Done"
   },
   "targets": {
     "_comment": "Numbers are READ FROM THESE NOTION PAGES at run time, never hardcoded. Each page is scanned for labelled values; dated lines build a history and the value in force at the end of the review window is used. Update the note in Notion and the next run picks it up.",

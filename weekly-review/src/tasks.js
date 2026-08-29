@@ -6,7 +6,7 @@
  * never decide what ends up in the "big three".
  */
 
-import { readDate, readMultiSelectNames, readRelationIds, readSelectName, readTitle } from './notion.js';
+import { readCheckbox, readDate, readMultiSelectNames, readRelationIds, readSelectName, readTitle } from './notion.js';
 import { addDays, compareDays, daysBetween, diffDays, isoWeekday } from './util/date.js';
 
 /** The next seven days, starting tomorrow, weekend included. */
@@ -64,8 +64,12 @@ export async function computeTasks({ client, pages, config, referenceDay }) {
       continue;
     }
 
+    // Completion is a checkbox in this workspace, but a status select is the
+    // more common shape, so both are supported and either may be configured.
+    const done = readCheckbox(page, tasksConfig.doneProperty);
     const status = readSelectName(page, tasksConfig.statusProperty);
-    const isDone = status ? doneStatuses.includes(status.toLowerCase()) : false;
+    const isDone = done === true
+      || (status ? doneStatuses.includes(status.toLowerCase()) : false);
     if (isDone) continue;
 
     const due = readDate(page, tasksConfig.dueProperty)?.slice(0, 10) ?? null;
