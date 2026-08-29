@@ -211,6 +211,29 @@ async function commandDiscover(config, client) {
     }
   }
 
+  const journalConfig = config.weeklyJournal;
+  if (journalConfig.weekProperty && journalConfig.databaseId !== 'REPLACE_ME') {
+    logger.info(`\n=== Rows with "${journalConfig.weekProperty}" set ===`);
+    try {
+      const { rows } = await safeQuery(client, journalConfig.databaseId, {
+        label: 'rows with a week number',
+        filter: { property: journalConfig.weekProperty, number: { is_not_empty: true } },
+        maxPages: 1,
+      });
+      logger.info(`${rows.length} row(s) carry a week number.`);
+      for (const page of rows.slice(0, 10)) {
+        logger.info(
+          `  - "${readTitle(page)}" | id=${page.id} `
+          + `| ${journalConfig.weekProperty}=${readNumber(page, journalConfig.weekProperty)} `
+          + `| tags=[${readMultiSelectNames(page, journalConfig.tagsProperty).join(', ')}] `
+          + `| created ${page.created_time?.slice(0, 10)}`,
+        );
+      }
+    } catch (error) {
+      logger.error(`Could not query by week number: ${error.message}`);
+    }
+  }
+
   logger.info('\n=== Target notes ===');
   for (const source of config.targets.sources) {
     try {
@@ -219,6 +242,18 @@ async function commandDiscover(config, client) {
     } catch (error) {
       logger.error(`  ${source.label} (${source.pageId}): ${error.message}`);
     }
+  }
+
+  // Printed last so a single look at the end of the log answers the question
+  // the whole command exists for.
+  logger.info('\n=== SUMMARY: every value the Tags property allows ===');
+  try {
+    const database = await client.getDatabase(config.weeklyJournal.databaseId);
+    const property = database.properties?.[config.weeklyJournal.tagsProperty];
+    const options = property?.multi_select?.options ?? property?.select?.options ?? [];
+    logger.info(`${options.length} option(s): ${options.map((option) => option.name).join(' | ')}`);
+  } catch (error) {
+    logger.error(`Could not read the tag vocabulary: ${error.message}`);
   }
 }
 
