@@ -113,6 +113,13 @@ async function commandDiscover(config, client) {
       logger.info(`Title: ${richTextToPlain(database.title ?? [])}`);
       for (const [property, definition] of Object.entries(database.properties)) {
         logger.info(`  - ${property.padEnd(28)} ${definition.type}`);
+
+        // A select's option list is the definitive set of values, unlike a
+        // sample of rows which only shows what happens to be recent.
+        const options = definition.multi_select?.options ?? definition.select?.options;
+        if (options && name === 'weeklyJournal') {
+          logger.info(`      all ${options.length} option(s): ${options.map((o) => o.name).join(' | ')}`);
+        }
       }
     } catch (error) {
       logger.error(`Could not read: ${error.message}`);
@@ -130,6 +137,24 @@ async function commandDiscover(config, client) {
       });
       const tagged = rows.filter(isWeeklyJournalPage(config));
       logger.info(`${tagged.length} of ${rows.length} recent rows carry the tag.`);
+
+      // Independent of tags: look the pages up by title.
+      for (const term of ['Weekly review', 'Weekly Review', 'Week ']) {
+        const { rows: byTitle } = await safeQuery(client, journal.databaseId, {
+          label: `journal title contains "${term}"`,
+          filter: { property: journal.titleProperty ?? 'Name', title: { contains: term } },
+          maxPages: 1,
+        });
+        logger.info(`Title contains "${term}": ${byTitle.length} row(s)`);
+        for (const page of byTitle.slice(0, 5)) {
+          logger.info(
+            `  - "${readTitle(page)}" | id=${page.id} `
+            + `| tags=[${readMultiSelectNames(page, journal.tagsProperty).join(', ')}] `
+            + `| ${journal.weekProperty}=${readNumber(page, journal.weekProperty)} `
+            + `| created ${page.created_time?.slice(0, 10)}`,
+          );
+        }
+      }
 
       if (!tagged.length) {
         // The configured tag matched nothing, so show what tags do exist
