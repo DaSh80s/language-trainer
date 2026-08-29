@@ -535,6 +535,13 @@ async function commandRun(config, client, flags) {
     return;
   }
 
+  // --create makes a new page instead of filling an existing one, so the
+  // output can be looked at without a duplicated template page to target.
+  if (flags.create) {
+    await createExamplePage(client, config, sections, referenceDay);
+    return;
+  }
+
   const page = await findReviewPage(client, config, referenceDay, flags.page);
   logger.info(`Writing into page ${page.id} ("${readTitle(page)}")`);
 
@@ -567,6 +574,48 @@ async function commandRun(config, client, flags) {
   }
 
   logger.info('Done.');
+}
+
+/**
+ * Create a fresh page in the journal database containing the generated
+ * sections, for looking at the output without touching a real review page.
+ *
+ * The inline databases and synced blocks from the template are not
+ * reproduced: the API cannot create linked views. This shows the generated
+ * content, not a full replacement for a duplicated template page.
+ */
+async function createExamplePage(client, config, sections, referenceDay) {
+  const journal = config.weeklyJournal;
+  const properties = {
+    [journal.titleProperty]: {
+      title: [{ text: { content: `Weekly review, ${referenceDay} (generated example)` } }],
+    },
+  };
+  if (journal.dateProperty) properties[journal.dateProperty] = { date: { start: referenceDay } };
+
+  const tag = weeklyJournalTags(config)[0];
+  if (journal.tagsProperty && tag) properties[journal.tagsProperty] = { multi_select: [{ name: tag }] };
+
+  const children = Object.entries(config.sections)
+    .filter(([, section]) => section.enabled)
+    .map(([name, section]) => ({
+      object: 'block',
+      type: 'toggle',
+      toggle: {
+        rich_text: [{ type: 'text', text: { content: section.toggle } }],
+        children: sections[name],
+      },
+    }));
+
+  const created = await client.createPage({
+    parent: { database_id: journal.databaseId },
+    properties,
+    children,
+  });
+
+  logger.info(`Created example page ${created.id}`);
+  logger.info(`  ${created.url ?? 'https://notion.so/' + created.id.replace(/-/g, '')}`);
+  return created;
 }
 
 /** Remove everything a previous run wrote from a page, leaving your own content. */
