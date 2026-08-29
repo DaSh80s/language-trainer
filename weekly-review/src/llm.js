@@ -16,7 +16,10 @@ const PROVIDERS = {
     isConfigured: (env) => Boolean(env.GEMINI_API_KEY),
     async call({ prompt, env, temperature, maxWords, fetchImpl }) {
       const model = env.GEMINI_MODEL || 'gemini-3.6-flash';
-      const response = await fetchImpl(
+      // Reasoning and the answer share one budget, so the budget is generous
+      // and reasoning is switched off. A model that rejects thinkingConfig
+      // retries without it rather than failing outright.
+      const send = (thinkingConfig) => fetchImpl(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: 'POST',
@@ -24,16 +27,17 @@ const PROVIDERS = {
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: {
-            temperature,
-            maxOutputTokens: Math.ceil(maxWords * 3) + 400,
-            // No reasoning is needed to phrase precomputed facts, and thinking
-            // tokens come out of the same budget as the answer.
-            thinkingConfig: { thinkingBudget: 0 },
-          },
+              temperature,
+              maxOutputTokens: Math.ceil(maxWords * 4) + 4000,
+              ...(thinkingConfig ? { thinkingConfig } : {}),
+            },
           }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         },
       );
+
+      let response = await send({ thinkingBudget: 0 });
+      if (response.status === 400) response = await send(null);
       if (!response.ok) throw new Error(`Gemini HTTP ${response.status}: ${await response.text()}`);
 
       const payload = await response.json();
