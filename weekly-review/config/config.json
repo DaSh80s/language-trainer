@@ -2,14 +2,18 @@
   "timezone": "Europe/Zurich",
   "locale": "en-GB",
   "weeklyJournal": {
-    "_comment": "Review pages live in the Notes database, identified by Tags. That database has no date property, so dateProperty is null and pages are matched by tag; weekProperty/yearProperty narrow it to the right week when present.",
+    "_comment": "Review pages are identified by tag. The handoff's 'Weekly journal' does not exist in this workspace; candidates below are tried in order.",
     "databaseId": "102c8a95-6a83-4675-a369-f00addeb95d6",
     "titleProperty": "Name",
     "dateProperty": null,
     "tagsProperty": "Tags",
-    "tagValue": "Weekly journal",
-    "weekProperty": "Number",
-    "yearProperty": "Year"
+    "weekProperty": null,
+    "yearProperty": "Year",
+    "tagValues": [
+      "Reviews",
+      "Journals",
+      "Weekly journal"
+    ]
   },
   "foodLog": {
     "databaseId": "382ee9fd-1543-8173-9181-c53d205152aa",
@@ -30,10 +34,10 @@
     "filterProperty": "Logged for"
   },
   "weightLog": {
-    "_comment": "The Notes database has no date property, so weight entry dates are parsed from the page title, e.g. '80.8 kg - 28 August 2026'.",
+    "_comment": "Weight entries carry the value in the numeric 'Number' property; only the date still comes from the title, e.g. '80.8 kg - 28 August 2026'.",
     "databaseId": "102c8a95-6a83-4675-a369-f00addeb95d6",
     "titleContains": "kg",
-    "numberProperty": null,
+    "numberProperty": "Number",
     "dateProperty": null,
     "trendWindowDays": 28,
     "titleProperty": "Name"

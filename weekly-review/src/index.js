@@ -129,7 +129,7 @@ async function commandDiscover(config, client) {
   // Schemas alone do not show how a review page is identified, so show rows.
   const journal = config.weeklyJournal;
   if (journal.databaseId && journal.databaseId !== 'REPLACE_ME') {
-    logger.info(`\n=== Sample "${journal.tagValue}" pages ===`);
+    logger.info(`\n=== Sample pages tagged [${weeklyJournalTags(config).join(", ")}] ===`);
     try {
       const rows = await client.queryDatabase(journal.databaseId, {
         sorts: [{ timestamp: 'created_time', direction: 'descending' }],
@@ -181,7 +181,6 @@ async function commandDiscover(config, client) {
           `created ${page.created_time?.slice(0, 10)}`,
           `tags=[${readMultiSelectNames(page, journal.tagsProperty).join(', ')}]`,
         ];
-        if (journal.weekProperty) parts.push(`${journal.weekProperty}=${readNumber(page, journal.weekProperty)}`);
         if (journal.yearProperty) parts.push(`${journal.yearProperty}=${readSelectName(page, journal.yearProperty)}`);
         logger.info(`  - ${parts.join(' | ')}`);
       }
@@ -373,17 +372,25 @@ function isToggleLike(block) {
 
 /** A page counts as a weekly review only if it carries the configured tag. */
 function isWeeklyJournalPage(config) {
-  const { tagsProperty, tagValue } = config.weeklyJournal;
-  if (!tagsProperty || !tagValue) return () => true;
+  const { tagsProperty } = config.weeklyJournal;
+  const candidates = weeklyJournalTags(config);
+  if (!tagsProperty || !candidates.length) return () => true;
 
-  const wanted = tagValue.toLowerCase();
+  const wanted = new Set(candidates.map((tag) => tag.toLowerCase()));
   return (page) => {
     const names = [
       ...readMultiSelectNames(page, tagsProperty),
       readSelectName(page, tagsProperty),
     ].filter(Boolean);
-    return names.some((name) => name.toLowerCase() === wanted);
+    return names.some((name) => wanted.has(name.toLowerCase()));
   };
+}
+
+/** Accepts either a single tagValue or a list of candidates to try. */
+function weeklyJournalTags(config) {
+  const { tagValues, tagValue } = config.weeklyJournal;
+  if (Array.isArray(tagValues) && tagValues.length) return tagValues;
+  return tagValue ? [tagValue] : [];
 }
 
 /** Find the page for this week's review, or explain how to point at one. */
@@ -421,7 +428,7 @@ async function findReviewPage(client, config, referenceDay, explicitPageId) {
   if (rows.length) {
     logger.warn(
       `Found ${rows.length} page(s) dated ${referenceDay} but none tagged `
-      + `"${config.weeklyJournal.tagValue}". Check weeklyJournal.tagsProperty and tagValue.`,
+      + `[${weeklyJournalTags(config).join(", ")}]. Check weeklyJournal.tagsProperty and tagValues.`,
     );
   }
 
@@ -432,7 +439,7 @@ async function findReviewPage(client, config, referenceDay, explicitPageId) {
 
   if (!recent.length) {
     throw new Error(
-      `No page tagged "${config.weeklyJournal.tagValue}" was found in the Notes database. `
+      `No page tagged [${weeklyJournalTags(config).join(", ")}] was found in the Notes database. `
       + 'Duplicate the Weekly review template first, or pass --page <page-id>.',
     );
   }
