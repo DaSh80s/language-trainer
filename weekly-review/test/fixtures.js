@@ -7,11 +7,17 @@
  * checked against figures Daniel already recognises.
  */
 
-const FOOD_DB = '382ee9fd-1543-8173-9181-c53d205152aa';
-const NOTES_DB = '6905399d-89b8-4580-80c2-90a917b1e20c';
-const TASKS_DB = '845be900-d560-4da0-bf7e-b228bd811df1';
-const MAINTENANCE_NOTE = 'fb74074b-4a94-4abd-81dd-b4a45db04aba';
-const TARGETS_NOTE = '32bee9fd-1543-8052-bbd7-eb8c6590eb63';
+import { loadConfig } from '../src/config.js';
+
+// Derived from the real config rather than hardcoded: an ID corrected in
+// config.json must never silently stop matching the fixtures.
+const config = await loadConfig();
+
+const FOOD_DB = config.foodLog.databaseId;
+const NOTES_DB = config.weightLog.databaseId;
+const TASKS_DB = config.tasks.databaseId;
+const MAINTENANCE_NOTE = config.targets.sources[0].pageId;
+const TARGETS_NOTE = config.targets.sources[1].pageId;
 
 export const IDS = { FOOD_DB, NOTES_DB, TASKS_DB, MAINTENANCE_NOTE, TARGETS_NOTE };
 
