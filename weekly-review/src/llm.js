@@ -23,7 +23,13 @@ const PROVIDERS = {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature, maxOutputTokens: Math.ceil(maxWords * 3) + 1200 },
+            generationConfig: {
+            temperature,
+            maxOutputTokens: Math.ceil(maxWords * 3) + 400,
+            // No reasoning is needed to phrase precomputed facts, and thinking
+            // tokens come out of the same budget as the answer.
+            thinkingConfig: { thinkingBudget: 0 },
+          },
           }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         },
@@ -187,8 +193,15 @@ export async function generateProse({
       const text = typeof result === 'string' ? result : result.text;
       const meta = typeof result === 'string' ? {} : result.meta ?? {};
 
-      if (meta.finishReason && meta.finishReason !== 'STOP' && meta.finishReason !== 'stop') {
-        logger.warn?.(`${provider.label} finished with ${meta.finishReason}; output may be incomplete.`);
+      const truncated = /MAX_TOKENS|length/i.test(meta.finishReason ?? '');
+      if (truncated) {
+        throw new Error(
+          `${provider.label} stopped at the token limit (${meta.finishReason}); `
+          + 'the text would have been cut mid-sentence.',
+        );
+      }
+      if (meta.finishReason && !/^stop$/i.test(meta.finishReason)) {
+        logger.warn?.(`${provider.label} finished with ${meta.finishReason}.`);
       }
       return {
         text: text.trim(), provider: provider.label, usedFallback: false, attempts, meta,

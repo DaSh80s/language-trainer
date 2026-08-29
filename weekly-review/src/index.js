@@ -630,6 +630,19 @@ async function commandClean(config, client, flags) {
   }
 
   const page = await client.getPage(flags.page);
+
+  // --archive removes the whole page, for pages this tool created itself.
+  if (flags.archive) {
+    logger.info(`Archiving page ${page.id} ("${readTitle(page)}")`);
+    if (flags['dry-run']) {
+      logger.info('Dry run: nothing archived.');
+      return;
+    }
+    await client.request(`/pages/${page.id}`, { method: 'PATCH', body: { archived: true } });
+    logger.info('Done. The page is in the Notion trash and can be restored from there.');
+    return;
+  }
+
   logger.info(`Cleaning generated blocks from ${page.id} ("${readTitle(page)}")`);
 
   const toggles = (await client.getBlockChildren(page.id)).filter(isToggleLike);
