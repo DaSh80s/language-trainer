@@ -245,18 +245,22 @@ async function commandDiscover(config, client) {
 
   // Printed last so a single look at the end of the log answers the question
   // the whole command exists for.
-  logger.info('\n=== SUMMARY: named databases shared with this integration ===');
-  try {
-    const search = await client.request('/search', {
-      method: 'POST',
-      body: { filter: { property: 'object', value: 'database' }, page_size: 100 },
-    });
-    const named = search.results
-      .map((database) => ({ id: database.id, title: richTextToPlain(database.title ?? []) }))
-      .filter((database) => database.title);
-    for (const database of named) logger.info(`  ${database.id}  ${database.title}`);
-  } catch (error) {
-    logger.error(`Could not list databases: ${error.message}`);
+  // A plain listing is swamped by the inline databases embedded in each review
+  // page, so search by name instead.
+  logger.info('\n=== SUMMARY: databases matching the names we need ===');
+  for (const term of ['Journals', 'Food Diary', 'All tasks', 'Notes']) {
+    try {
+      const search = await client.request('/search', {
+        method: 'POST',
+        body: { query: term, filter: { property: 'object', value: 'database' }, page_size: 5 },
+      });
+      const matches = search.results
+        .map((database) => ({ id: database.id, title: richTextToPlain(database.title ?? []) }))
+        .filter((database) => database.title.toLowerCase().includes(term.toLowerCase()));
+      logger.info(`  "${term}": ${matches.map((m) => `${m.title} = ${m.id}`).join('  |  ') || 'no match'}`);
+    } catch (error) {
+      logger.error(`  "${term}": search failed: ${error.message}`);
+    }
   }
 
   logger.info('\n=== SUMMARY: every value the Tags property allows ===');
