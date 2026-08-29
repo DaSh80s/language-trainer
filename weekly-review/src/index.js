@@ -372,6 +372,9 @@ export async function writeProse(facts, config) {
     `Prose: nutrition=${nutrition.provider}, progress=${progress.provider}, `
     + `meetings=${meetings.provider}, tasks=${tasks.provider}`,
   );
+  if (nutrition.usedFallback && nutrition.attempts?.length) {
+    logger.warn(`LLM providers were not used. Why: ${nutrition.attempts.join(' ; ')}`);
+  }
 
   return { nutrition, progress, meetings, tasks };
 }
@@ -445,30 +448,26 @@ async function findReviewPage(client, config, referenceDay, explicitPageId) {
   const tagged = rows.filter(isWeeklyJournalPage(config));
   if (tagged.length) return tagged[0];
 
-  if (rows.length) {
-    logger.warn(
-      `Found ${rows.length} page(s) dated ${referenceDay} but none tagged `
-      + `[${weeklyJournalTags(config).join(", ")}]. Check weeklyJournal.tagsProperty and tagValues.`,
-    );
-  }
+  // Writing into "some other page" is never the right answer. If the page for
+  // this date cannot be identified, stop and say exactly what was found, so
+  // the wrong week never gets overwritten.
+  const found = rows.map((page) => {
+    const tags = [
+      ...readMultiSelectNames(page, config.weeklyJournal.tagsProperty),
+      readSelectName(page, config.weeklyJournal.tagsProperty),
+    ].filter(Boolean);
+    return `  - "${readTitle(page)}" (id ${page.id}) tags=[${tags.join(', ') || 'none'}]`;
+  });
 
-  const recent = (await client.queryDatabase(databaseId, {
-    sorts: [{ timestamp: 'created_time', direction: 'descending' }],
-    maxPages: 2,
-  })).filter(isWeeklyJournalPage(config));
-
-  if (!recent.length) {
-    throw new Error(
-      `No page tagged [${weeklyJournalTags(config).join(", ")}] was found in the Notes database. `
-      + 'Duplicate the Weekly review template first, or pass --page <page-id>.',
-    );
-  }
-
-  logger.warn(
-    `No page dated ${referenceDay}; using the most recently created page instead `
-    + `("${readTitle(recent[0])}"). Duplicate the template first if that is not the right page.`,
+  throw new Error(
+    `No page dated ${referenceDay} tagged [${weeklyJournalTags(config).join(', ')}] `
+    + `in the ${config.weeklyJournal.databaseId} database.\n`
+    + (found.length
+      ? `Pages dated ${referenceDay}:\n${found.join('\n')}\n\n`
+        + 'Either the tag is missing on this week\'s page, or tagValues needs updating.'
+      : 'No page carries that date at all - duplicate the template first.')
+    + '\nNothing was written. Pass --page <page-id> to target a page explicitly.',
   );
-  return recent[0];
 }
 
 /** Replace anything a previous run wrote inside this toggle, then append the new blocks. */
@@ -570,6 +569,38 @@ async function commandRun(config, client, flags) {
   logger.info('Done.');
 }
 
+/** Remove everything a previous run wrote from a page, leaving your own content. */
+async function commandClean(config, client, flags) {
+  if (typeof flags.page !== 'string') {
+    throw new Error('clean requires --page <page-id>.');
+  }
+
+  const page = await client.getPage(flags.page);
+  logger.info(`Cleaning generated blocks from ${page.id} ("${readTitle(page)}")`);
+
+  const toggles = (await client.getBlockChildren(page.id)).filter(isToggleLike);
+  let removed = 0;
+
+  for (const toggle of toggles) {
+    const children = await client.getBlockChildren(toggle.id);
+    const markerIndex = children.findIndex((child) =>
+      child.type === 'paragraph'
+      && richTextToPlain(child.paragraph.rich_text).startsWith(MARKER));
+    if (markerIndex === -1) continue;
+
+    const stale = children.slice(markerIndex);
+    if (flags['dry-run']) {
+      logger.info(`  ${toggleText(toggle)}: would remove ${stale.length} block(s)`);
+      continue;
+    }
+    for (const block of stale) await client.deleteBlock(block.id);
+    logger.info(`  ${toggleText(toggle)}: removed ${stale.length} block(s)`);
+    removed += stale.length;
+  }
+
+  logger.info(flags['dry-run'] ? 'Dry run: nothing removed.' : `Done. Removed ${removed} block(s).`);
+}
+
 /* --------------------------------- main --------------------------------- */
 
 async function main() {
@@ -586,6 +617,7 @@ async function main() {
   switch (args.command) {
     case 'discover': return commandDiscover(config, client);
     case 'run': return commandRun(config, client, args.flags);
+    case 'clean': return commandClean(config, client, args.flags);
     default:
       logger.error(`Unknown command "${args.command}". Use "discover" or "run".`);
       process.exitCode = 1;
