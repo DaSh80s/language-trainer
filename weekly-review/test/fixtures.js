@@ -96,8 +96,12 @@ const WEIGHTS = [
 ];
 
 function weightRows() {
+  // Mirrors the live rows: the value is in the numeric Number property and
+  // the date is in the title.
   return WEIGHTS.map(([day, kg]) => page({
     Name: title(`${kg} kg — ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`))}`),
+    Number: number(kg),
+    Tags: multiSelect(['Weight']),
   }, day));
 }
 
