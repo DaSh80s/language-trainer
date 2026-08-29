@@ -535,6 +535,15 @@ async function commandRun(config, client, flags) {
   }
   logger.info('\n--- end preview ---\n');
 
+  logger.info('--- prose sources ---');
+  for (const [name, result] of Object.entries(proseBySection)) {
+    logger.info(`  ${name}: ${result.provider}${result.usedFallback ? ' (FALLBACK)' : ''}`);
+    if (result.usedFallback && result.attempts?.length) {
+      for (const attempt of result.attempts) logger.info(`      ${attempt.slice(0, 220)}`);
+    }
+  }
+  logger.info('');
+
   if (dryRun) {
     logger.info('Dry run: nothing was written to Notion.');
     return;
