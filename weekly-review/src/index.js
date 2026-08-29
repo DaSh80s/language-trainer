@@ -1,0 +1,411 @@
+#!/usr/bin/env node
+/**
+ * Weekly review generator.
+ *
+ *   node src/index.js discover            inspect the workspace and print schemas
+ *   node src/index.js run --dry-run       compute everything, write nothing
+ *   node src/index.js run                 fill this week's review page
+ *
+ * The run is deliberately ordered so that anything that can fail loudly does so
+ * before a single block is written to Notion.
+ */
+
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import { loadConfig, loadDotEnv, loadFeedsFromEnv, packageRoot } from './config.js';
+import { NotionClient, readTitle, richTextToPlain } from './notion.js';
+import { resolveTargets } from './targets.js';
+import { computeNutrition, parseMilestones, parseWeightEntries, reviewWindow, summariseFood, summariseWeight } from './nutrition.js';
+import { computeProgress } from './progress.js';
+import { computeTasks, taskWindow } from './tasks.js';
+import { computeMeetings } from './meetings.js';
+import { generateProse } from './llm.js';
+import {
+  MARKER, blocksToPreview, fallbackMeetingsProse, fallbackNutritionProse,
+  fallbackProgressProse, fallbackTasksProse, renderMeetings, renderNutrition,
+  renderProgress, renderTasks,
+} from './render.js';
+import { addDays, todayInZone } from './util/date.js';
+
+/* -------------------------------- CLI ---------------------------------- */
+
+function parseArgs(argv) {
+  const args = { command: argv[2] ?? 'run', flags: {} };
+  for (let index = 3; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (!token.startsWith('--')) continue;
+    const [name, inlineValue] = token.slice(2).split('=');
+    const next = argv[index + 1];
+    if (inlineValue !== undefined) args.flags[name] = inlineValue;
+    else if (next && !next.startsWith('--')) { args.flags[name] = next; index += 1; }
+    else args.flags[name] = true;
+  }
+  return args;
+}
+
+const logger = {
+  info: (...parts) => console.log(...parts),
+  warn: (...parts) => console.warn('⚠️ ', ...parts),
+  error: (...parts) => console.error('❌', ...parts),
+};
+
+/* ----------------------------- query helpers ---------------------------- */
+
+/** Run a filtered query, falling back to an unfiltered scan if the filter is rejected. */
+async function safeQuery(client, databaseId, { filter, sorts, label, maxPages = 6 }) {
+  try {
+    const rows = await client.queryDatabase(databaseId, { filter, sorts });
+    return { rows, filtered: true };
+  } catch (error) {
+    logger.warn(
+      `Filtered query on ${label} failed (${error.message.slice(0, 140)}). `
+      + 'Falling back to an unfiltered scan and filtering locally.',
+    );
+    const rows = await client.queryDatabase(databaseId, {
+      sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+      maxPages,
+    });
+    return { rows, filtered: false };
+  }
+}
+
+function dateWindowFilter(property, start, endExclusive) {
+  return {
+    and: [
+      { property, date: { on_or_after: start } },
+      { property, date: { before: endExclusive } },
+    ],
+  };
+}
+
+/* ------------------------------- discover ------------------------------- */
+
+async function commandDiscover(config, client) {
+  logger.info('\n=== Workspace identity ===');
+  const search = await client.request('/search', {
+    method: 'POST',
+    body: { filter: { property: 'object', value: 'database' }, page_size: 100 },
+  });
+
+  logger.info(`\nDatabases shared with this integration (${search.results.length}):`);
+  for (const database of search.results) {
+    const title = richTextToPlain(database.title ?? []);
+    logger.info(`  ${database.id}  ${title || '(untitled)'}`);
+  }
+
+  const configured = [
+    ['foodLog', config.foodLog.databaseId],
+    ['weightLog', config.weightLog.databaseId],
+    ['tasks', config.tasks.databaseId],
+    ['weeklyJournal', config.weeklyJournal.databaseId],
+  ];
+
+  for (const [name, databaseId] of configured) {
+    logger.info(`\n=== ${name} (${databaseId}) ===`);
+    if (!databaseId || databaseId === 'REPLACE_ME') {
+      logger.warn('Not configured yet.');
+      continue;
+    }
+    try {
+      const database = await client.getDatabase(databaseId);
+      logger.info(`Title: ${richTextToPlain(database.title ?? [])}`);
+      for (const [property, definition] of Object.entries(database.properties)) {
+        logger.info(`  - ${property.padEnd(28)} ${definition.type}`);
+      }
+    } catch (error) {
+      logger.error(`Could not read: ${error.message}`);
+    }
+  }
+
+  logger.info('\n=== Target notes ===');
+  for (const source of config.targets.sources) {
+    try {
+      const page = await client.getPage(source.pageId);
+      logger.info(`  ✅ ${source.label}: "${readTitle(page)}"`);
+    } catch (error) {
+      logger.error(`  ${source.label} (${source.pageId}): ${error.message}`);
+    }
+  }
+}
+
+/* --------------------------------- run ---------------------------------- */
+
+export async function gatherFacts({ config, client, referenceDay, feeds, fetchImpl }) {
+  const nutritionWindow = reviewWindow(referenceDay, 7);
+  const tasksWindow = taskWindow(referenceDay, 7);
+
+  // Targets first: a missing maintenance figure should stop the run immediately.
+  const targets = await resolveTargets(client, config.targets, nutritionWindow.end);
+  logger.info(`Maintenance: ${targets.values.maintenanceKcal} kcal (${targets.provenance.maintenanceKcal.description})`);
+
+  const foodStart = nutritionWindow.start;
+  const foodEndExclusive = addDays(nutritionWindow.end, 1);
+
+  const foodQuery = await safeQuery(client, config.foodLog.databaseId, {
+    label: 'Food Log',
+    filter: dateWindowFilter(config.foodLog.dateProperties[0], foodStart, foodEndExclusive),
+    maxPages: 10,
+  });
+
+  const weightQuery = await safeQuery(client, config.weightLog.databaseId, {
+    label: 'weight log (Notes)',
+    filter: { property: 'title', title: { contains: config.weightLog.titleContains } },
+    maxPages: 6,
+  });
+
+  const tasksQuery = await safeQuery(client, config.tasks.databaseId, {
+    label: 'All tasks',
+    filter: dateWindowFilter(
+      config.tasks.dueProperty,
+      addDays(referenceDay, -90),
+      addDays(tasksWindow.end, 1),
+    ),
+    maxPages: 10,
+  });
+
+  const food = summariseFood(foodQuery.rows, config.foodLog, nutritionWindow, config.timezone);
+  const weightEntries = parseWeightEntries(weightQuery.rows, config.weightLog, config.timezone);
+  const weight = summariseWeight(weightEntries, nutritionWindow, config.weightLog.trendWindowDays);
+  const milestones = parseMilestones(tasksQuery.rows, config.goal, config.tasks);
+
+  logger.info(
+    `Food rows: ${foodQuery.rows.length} (${food.daysWithEntries}/${nutritionWindow.lengthDays} days logged) · `
+    + `weight readings: ${weightEntries.length} · task rows: ${tasksQuery.rows.length} · milestones: ${milestones.length}`,
+  );
+
+  const nutrition = computeNutrition({
+    food, weight, milestones, targets, window: nutritionWindow, config, referenceDay,
+  });
+  const progress = computeProgress(referenceDay, config);
+  const tasks = await computeTasks({ client, pages: tasksQuery.rows, config, referenceDay });
+  const meetings = await computeMeetings({ feeds, config, referenceDay, fetchImpl, logger });
+
+  return { nutrition, progress, tasks, meetings, targets, warnings: targets.warnings };
+}
+
+export async function writeProse(facts, config) {
+  const untrustedTasks = facts.tasks.bigThree.map((item) => item.title);
+  const untrustedMeetings = facts.meetings.days.flatMap((day) => day.meetings.map((meeting) => meeting.title));
+
+  const [nutrition, progress, meetings, tasks] = await Promise.all([
+    generateProse({
+      instruction: 'Give at most three concrete actions for the week ahead, then one or two sentences of encouragement.',
+      facts: facts.nutrition,
+      config,
+      fallback: fallbackNutritionProse(facts.nutrition),
+      logger,
+    }),
+    generateProse({
+      instruction: 'In two sentences, reflect on where the year stands and what the coming week is for.',
+      facts: facts.progress,
+      config,
+      fallback: fallbackProgressProse(facts.progress),
+      logger,
+    }),
+    generateProse({
+      instruction: 'Summarise the week\'s notable meetings and flag the one that needs the most preparation.',
+      facts: { ...facts.meetings, days: undefined },
+      untrusted: untrustedMeetings,
+      config,
+      fallback: fallbackMeetingsProse(facts.meetings),
+      logger,
+    }),
+    generateProse({
+      instruction: 'Summarise the workload and give an honest realism check in two or three sentences.',
+      facts: { ...facts.tasks, byProject: undefined, overdue: undefined },
+      untrusted: untrustedTasks,
+      config,
+      fallback: fallbackTasksProse(facts.tasks),
+      logger,
+    }),
+  ]);
+
+  logger.info(
+    `Prose: nutrition=${nutrition.provider}, progress=${progress.provider}, `
+    + `meetings=${meetings.provider}, tasks=${tasks.provider}`,
+  );
+
+  return { nutrition, progress, meetings, tasks };
+}
+
+function normaliseHeading(value) {
+  return value.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function toggleText(block) {
+  const content = block[block.type];
+  return richTextToPlain(content?.rich_text ?? []);
+}
+
+function isToggleLike(block) {
+  if (block.type === 'toggle') return true;
+  return block.type.startsWith('heading_') && block[block.type]?.is_toggleable;
+}
+
+/** Find the page for this week's review, or explain how to point at one. */
+async function findReviewPage(client, config, referenceDay, explicitPageId) {
+  if (explicitPageId) return client.getPage(explicitPageId);
+
+  const { databaseId, dateProperty } = config.weeklyJournal;
+  if (!databaseId || databaseId === 'REPLACE_ME') {
+    throw new Error(
+      'weeklyJournal.databaseId is not configured. Run `npm run discover` to find it, '
+      + 'or pass --page <page-id> to target a specific page.',
+    );
+  }
+
+  const { rows } = await safeQuery(client, databaseId, {
+    label: 'weekly journal',
+    filter: { property: dateProperty, date: { equals: referenceDay } },
+  });
+
+  if (rows.length) return rows[0];
+
+  const recent = await client.queryDatabase(databaseId, {
+    sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+    maxPages: 1,
+  });
+
+  if (!recent.length) throw new Error('The weekly-journal database has no pages to write into.');
+
+  logger.warn(
+    `No page dated ${referenceDay}; using the most recently created page instead `
+    + `("${readTitle(recent[0])}"). Duplicate the template first if that is not the right page.`,
+  );
+  return recent[0];
+}
+
+/** Replace anything a previous run wrote inside this toggle, then append the new blocks. */
+async function fillToggle(client, toggle, blocks, { dryRun }) {
+  const children = await client.getBlockChildren(toggle.id);
+  const markerIndex = children.findIndex((child) =>
+    child.type === 'paragraph'
+    && richTextToPlain(child.paragraph.rich_text).startsWith(MARKER));
+
+  const stale = markerIndex === -1 ? [] : children.slice(markerIndex);
+
+  if (dryRun) return { removed: stale.length, added: blocks.length };
+
+  for (const block of stale) {
+    await client.deleteBlock(block.id);
+  }
+  await client.appendBlockChildren(toggle.id, blocks);
+  return { removed: stale.length, added: blocks.length };
+}
+
+async function commandRun(config, client, flags) {
+  const dryRun = Boolean(flags['dry-run']);
+  const referenceDay = typeof flags.date === 'string' ? flags.date : todayInZone(config.timezone);
+
+  if (config._isExample) {
+    logger.warn(`Using ${config._path}. Copy it to config/config.json and edit it for a real run.`);
+  }
+  if (flags['no-llm']) config.llm.enabled = false;
+
+  logger.info(`Reference day: ${referenceDay} (${config.timezone})`);
+
+  const feeds = loadFeedsFromEnv();
+  if (!feeds.length) logger.warn('No ICS_FEEDS configured — the meetings section will say so rather than guess.');
+
+  const facts = await gatherFacts({ config, client, referenceDay, feeds });
+  for (const warning of facts.warnings) logger.warn(warning);
+
+  const proseBySection = await writeProse(facts, config);
+  const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
+
+  const sections = {
+    nutrition: renderNutrition(facts.nutrition, proseBySection.nutrition.text, generatedAt),
+    progress: renderProgress(facts.progress, proseBySection.progress.text, generatedAt),
+    meetings: renderMeetings(facts.meetings, proseBySection.meetings.text, generatedAt, config.locale),
+    tasks: renderTasks(facts.tasks, proseBySection.tasks.text, generatedAt),
+  };
+
+  if (flags.out) {
+    const path = resolve(packageRoot, String(flags.out));
+    await mkdir(resolve(path, '..'), { recursive: true });
+    await writeFile(path, JSON.stringify({ referenceDay, facts, sections }, null, 2));
+    logger.info(`Wrote facts to ${path}`);
+  }
+
+  logger.info('\n--- preview ---');
+  for (const [name, blocks] of Object.entries(sections)) {
+    if (!config.sections[name].enabled) continue;
+    logger.info(`\n## ${config.sections[name].toggle}`);
+    logger.info(blocksToPreview(blocks));
+  }
+  logger.info('\n--- end preview ---\n');
+
+  if (dryRun) {
+    logger.info('Dry run: nothing was written to Notion.');
+    return;
+  }
+
+  const page = await findReviewPage(client, config, referenceDay, flags.page);
+  logger.info(`Writing into page ${page.id} ("${readTitle(page)}")`);
+
+  const topLevel = await client.getBlockChildren(page.id);
+  const toggles = topLevel.filter(isToggleLike);
+  const missing = [];
+
+  for (const [name, section] of Object.entries(config.sections)) {
+    if (!section.enabled) continue;
+
+    const wanted = normaliseHeading(section.toggle);
+    const toggle = toggles.find((candidate) => normaliseHeading(toggleText(candidate)) === wanted)
+      ?? toggles.find((candidate) => normaliseHeading(toggleText(candidate)).includes(wanted));
+
+    if (!toggle) {
+      missing.push(section.toggle);
+      continue;
+    }
+
+    const result = await fillToggle(client, toggle, sections[name], { dryRun });
+    logger.info(`  ${section.toggle}: replaced ${result.removed}, added ${result.added} blocks`);
+  }
+
+  if (missing.length) {
+    logger.warn(
+      `Could not find these toggles on the page: ${missing.join('; ')}. `
+      + 'Check the headings in config.sections match the template.',
+    );
+    logger.warn(`Toggles actually on the page: ${toggles.map(toggleText).join(' | ') || '(none)'}`);
+  }
+
+  logger.info('Done.');
+}
+
+/* --------------------------------- main --------------------------------- */
+
+async function main() {
+  const args = parseArgs(process.argv);
+  await loadDotEnv();
+  const config = await loadConfig(typeof args.flags.config === 'string' ? args.flags.config : undefined);
+
+  const client = new NotionClient({
+    token: process.env.NOTION_TOKEN,
+    version: process.env.NOTION_VERSION || undefined,
+    logger,
+  });
+
+  switch (args.command) {
+    case 'discover': return commandDiscover(config, client);
+    case 'run': return commandRun(config, client, args.flags);
+    default:
+      logger.error(`Unknown command "${args.command}". Use "discover" or "run".`);
+      process.exitCode = 1;
+  }
+}
+
+// Only run when invoked directly, so tests can import the pipeline.
+const invokedDirectly = process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  main().catch((error) => {
+    logger.error(error.message);
+    if (process.env.DEBUG) console.error(error);
+    process.exitCode = 1;
+  });
+}

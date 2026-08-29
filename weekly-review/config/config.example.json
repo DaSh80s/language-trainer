@@ -1,0 +1,231 @@
+{
+  "timezone": "Europe/Zurich",
+  "locale": "en-GB",
+  "weeklyJournal": {
+    "_comment": "The weekly-journal database the review pages live in. Run `npm run discover` to find this ID -- it is NOT in the handoff.",
+    "databaseId": "REPLACE_ME",
+    "titleProperty": "Name",
+    "dateProperty": "Date",
+    "tagsProperty": "Tags",
+    "tagValue": "Weekly journal"
+  },
+  "foodLog": {
+    "databaseId": "382ee9fd-1543-8173-9181-c53d205152aa",
+    "dateProperties": [
+      "Effective date",
+      "Logged for"
+    ],
+    "fallbackToCreatedTime": true,
+    "numberProperties": {
+      "calories": "Calories",
+      "protein": "Protein (g)",
+      "fibre": "Fibre (g)",
+      "fat": "Fat (g)",
+      "carbs": "Carbs (g)",
+      "sugar": "Sugar (g)"
+    }
+  },
+  "weightLog": {
+    "_comment": "Weight entries currently live as Notes pages titled like '80.8 kg - 28 August 2026'. If you migrate to a real database with a numeric property, set numberProperty and dateProperty and titles stop being parsed.",
+    "databaseId": "6905399d-89b8-4580-80c2-90a917b1e20c",
+    "titleContains": "kg",
+    "numberProperty": null,
+    "dateProperty": null,
+    "trendWindowDays": 28
+  },
+  "tasks": {
+    "databaseId": "845be900-d560-4da0-bf7e-b228bd811df1",
+    "dueProperty": "Due",
+    "statusProperty": "Status",
+    "doneStatuses": [
+      "Done",
+      "Complete",
+      "Completed",
+      "Archived"
+    ],
+    "projectProperty": "Project",
+    "priorityProperty": "Priority",
+    "highPriorityValues": [
+      "High",
+      "Urgent",
+      "P1"
+    ],
+    "routineHints": [
+      "daily",
+      "weekly",
+      "recurring",
+      "routine",
+      "check email",
+      "timesheet"
+    ]
+  },
+  "targets": {
+    "_comment": "Numbers are READ FROM THESE NOTION PAGES at run time, never hardcoded. Each page is scanned for labelled values; dated lines build a history and the value in force at the end of the review window is used. Update the note in Notion and the next run picks it up.",
+    "sources": [
+      {
+        "pageId": "fb74074b-4a94-4abd-81dd-b4a45db04aba",
+        "label": "Maintenance calories note"
+      },
+      {
+        "pageId": "32bee9fd-1543-8052-bbd7-eb8c6590eb63",
+        "label": "Food analysis (nutrition targets)"
+      }
+    ],
+    "fields": {
+      "maintenanceKcal": {
+        "required": true,
+        "synonyms": [
+          "maintenance calories",
+          "maintenance kcal",
+          "maintenance",
+          "tdee"
+        ],
+        "unit": "kcal",
+        "min": 1200,
+        "max": 5000
+      },
+      "targetKcal": {
+        "required": false,
+        "synonyms": [
+          "fat loss target",
+          "fat-loss target",
+          "target calories",
+          "calorie target",
+          "daily target"
+        ],
+        "unit": "kcal",
+        "min": 1000,
+        "max": 4000,
+        "derive": {
+          "from": "maintenanceKcal",
+          "offset": -400
+        }
+      },
+      "proteinTargetG": {
+        "required": false,
+        "synonyms": [
+          "protein target",
+          "protein goal",
+          "protein"
+        ],
+        "unit": "g",
+        "min": 40,
+        "max": 300
+      },
+      "fibreTargetG": {
+        "required": false,
+        "synonyms": [
+          "fibre target",
+          "fiber target",
+          "fibre goal",
+          "fibre"
+        ],
+        "unit": "g",
+        "min": 10,
+        "max": 100
+      }
+    }
+  },
+  "goal": {
+    "description": "Seven-day average weight at or below 78 kg",
+    "targetWeightKg": 78,
+    "deadline": "2026-10-18",
+    "milestoneSearch": {
+      "_comment": "Milestones are rows in the tasks database titled like 'Week 4: 7-day average weight at or below 80.1 kg'.",
+      "titlePattern": "7-day average weight at or below\\s*([0-9]+(?:[.,][0-9]+)?)\\s*kg"
+    }
+  },
+  "grading": {
+    "_comment": "Fractions of target. A >= 1.0 of target for protein/fibre; fat loss grades on observed loss vs planned loss.",
+    "intakeBandKcal": 100,
+    "kcalPerKgFat": 7700,
+    "protein": {
+      "A": 1.0,
+      "B": 0.9,
+      "C": 0.8,
+      "D": 0.65
+    },
+    "fibre": {
+      "A": 1.0,
+      "B": 0.85,
+      "C": 0.7,
+      "D": 0.5
+    },
+    "fatLoss": {
+      "A": 1.0,
+      "B": 0.75,
+      "C": 0.5,
+      "D": 0.25
+    },
+    "loggingDaysForFullCredit": 7
+  },
+  "meetings": {
+    "_comment": "Applied to ICS feeds. Exclusions win over inclusions except for the alwaysInclude list.",
+    "internalDomains": [
+      "rigby.ch",
+      "rigbyag.onmicrosoft.com"
+    ],
+    "excludeTitles": [
+      "daily meeting",
+      "friday forum",
+      "focus",
+      "hold",
+      "block",
+      "birthday",
+      "school holiday",
+      "schulferien",
+      "tripit",
+      "arsenal",
+      "revelin",
+      "out of office",
+      "ooo",
+      "lunch break"
+    ],
+    "excludeAllDayInformational": true,
+    "excludeDeclined": true,
+    "alwaysIncludeTitles": [
+      "interview",
+      "coffee",
+      "catch-up",
+      "catch up",
+      "1:1",
+      "one-to-one",
+      "client",
+      "conference",
+      "travel",
+      "flight",
+      "dinner",
+      "offsite",
+      "board"
+    ],
+    "minDurationMinutes": 15,
+    "selfEmails": [
+      "daniel@rigby.ch",
+      "dshalom100@gmail.com"
+    ]
+  },
+  "sections": {
+    "_comment": "Maps each generated section to the toggle heading it is written into. Matching is case-insensitive and ignores punctuation. Blocks are never matched by URL -- those change on every duplication.",
+    "nutrition": {
+      "toggle": "Calories (total and average)",
+      "enabled": true
+    },
+    "progress": {
+      "toggle": "What week of the year are we going into now?",
+      "enabled": true
+    },
+    "meetings": {
+      "toggle": "What big meetings do I have next week?",
+      "enabled": true
+    },
+    "tasks": {
+      "toggle": "What are the key things I want to get done next week?",
+      "enabled": true
+    }
+  },
+  "llm": {
+    "maxWordsPerSection": 110,
+    "temperature": 0.4,
+    "enabled": true
+  }
+}

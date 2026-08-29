@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  pull_request:
+    paths:
+      - 'weekly-review/**'
+      - '.github/workflows/test.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'weekly-review/**'
+      - '.github/workflows/test.yml'
+
+jobs:
+  weekly-review:
+    name: weekly-review unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: weekly-review
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The generator has no dependencies, so there is nothing to install.
+      - name: Unit tests
+        run: npm test
+
+      # Exercises the whole pipeline against fixtures: no network, no Notion
+      # workspace, no API keys. Catches wiring breaks the unit tests can miss.
+      - name: End-to-end run against fixtures
+        run: npm run demo
