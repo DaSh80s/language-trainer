@@ -8,12 +8,12 @@ _Update this section at the end of each session so any device can pick up where 
 - **App state:** Live and working at https://language-trainer-kappa.vercel.app
 - **Last worked on:** Shipped the **Fluo redesign** (2026-06-28) — full visual overhaul to the warm editorial "Fluo" design system: CSS-variable theming with a working light (terracotta) / dark (fluo-lime) toggle persisted to `localStorage['lt_theme']`, Spectral + IBM Plex Sans/Mono fonts, new header + segmented tabs, two-column Practice screen (setup rail + chronological tutor chat with a thin mode/level context strip + docked answer bar), card-based Vocabulary grid, and a Progress dashboard with a weekly-activity chart. All existing logic (API, conversation/drill flow, streak, vocab & error storage) was preserved — this was a reskin, not a rewrite. Name kept as **Fluo**; default theme is **light**.
 - **Also in this repo (2026-08-29):** `weekly-review/` — a scheduled generator that fills the Notion **Weekly review** page (fitness/nutrition, year & week progress, next week's meetings, next week's tasks). It replaces the four Notion custom AI blocks, which could not fetch URLs, could not see Notion Calendar, and did not run on duplication. Code computes every number from the Notion API; a free model (Gemini → Groq → Cloudflare, with a deterministic fallback) writes only the prose. Maintenance calories are read live from the Notion note, never hardcoded. Runs from `.github/workflows/weekly-review.yml` each Saturday. See `weekly-review/README.md`.
-- **In progress:** Nothing — the app is stable; the weekly-review generator needs a Notion token and a `config/config.json` before its first live run.
+- **In progress:** Nothing. The weekly-review generator ran live on 2026-08-29 and filled all four toggles of the 29 August review page. Config is verified against the real workspace (Food Diary, Notes, All tasks, Journals). Optional next steps: add `GEMINI_API_KEY` / `GROQ_API_KEY` / `CLOUDFLARE_*` secrets for nicer prose, and `ICS_FEEDS` to enable the meetings section.
 - **Next ideas:**
   - Mobile: collapse the Practice setup rail into a chip + bottom-sheet (currently it just stacks above the chat on narrow screens).
   - Vocab cards show a POS tag (Noun/Verb) only when derivable — the data model has no part-of-speech field yet; add one if we want reliable Noun/Verb filter chips.
   - iPad landscape layout (handoff only covered portrait).
-  - Weekly review: run `npm run discover` in `weekly-review/` to confirm the real property names and find the weekly-journal database ID, then do a `--dry-run` before the first live write.
+  - Weekly review: delete the four old AI blocks from the Notion template now that the generator fills those toggles; set the Eisenhower field on real tasks so the "big three" is meaningful.
 
 ## Practice Modes
 | Mode | Description |
