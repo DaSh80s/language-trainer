@@ -69,17 +69,31 @@ Maintenance calories note, the Food analysis note.
 
 ### 2. Configure
 
+The config is already filled in with values **verified against the live
+workspace**, so there is nothing to look up for this installation:
+
+| What | Database | Notes |
+|---|---|---|
+| Food log | `382ee9fd…` **Food Diary** | `Effective date` is a *formula*, so queries filter on `Logged for` |
+| Weight | `102c8a95…` **Notes database** | value in the numeric `Number` property; date parsed from the title |
+| Tasks | `46573cd6…` **All tasks** | no Status or Priority: completion is the `Done` checkbox, priority is the Eisenhower multi-select |
+| Review pages | `1212eaed…` **Journals** | title `text`, date `date`, tag `Weekly journal` |
+
+Only `NOTION_TOKEN` is needed. To re-check the schemas after changing something
+in Notion:
+
 ```bash
 cd weekly-review
-cp config/config.example.json config/config.json
 cp .env.example .env          # add NOTION_TOKEN
-npm run discover              # prints every database and its real property names
+npm run discover
 ```
 
-`discover` lists the databases shared with the integration and dumps each
-configured database's schema. Correct any property name in `config.json` that
-does not match, and fill in `weeklyJournal.databaseId` — that ID is not in the
-handoff and has to be looked up.
+Without a terminal, run the **Weekly review** workflow from the Actions tab
+with **mode: discover** — same output, token held as a repository secret.
+
+> One gotcha worth knowing: the `Done` checkbox in All tasks is really named
+> `\uFEFFDone` — a byte-order mark from a paste. An exact key lookup fails
+> silently, so property lookup ignores invisible characters.
 
 ### 3. Check it without touching Notion
 
@@ -173,9 +187,11 @@ replaces rather than stacks.
 
 ## Worth doing in Notion itself
 
-- Move weight entries into a database with a **numeric** property and a real
-  date. Parsing kilograms out of page titles works, and is tested, but a proper
-  property removes a whole class of failure.
+- ~~Move weight entries to a numeric property~~ — already done: the `Number`
+  property holds the value, so only the date is still parsed from the title.
+- Set the Eisenhower field (`Do, delete, delegate, automate`) on the tasks that
+  matter. Without it the "big three" is just the three earliest due dates,
+  which is not a useful weekly priority.
 - Archive the legacy "Weight and Calorie Tracker" — this tool never reads it,
   but it still pollutes workspace search.
 - Remove the "Zurich School Holidays" subscription containing injected text.

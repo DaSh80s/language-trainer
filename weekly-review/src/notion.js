@@ -152,6 +152,33 @@ export function richTextToPlain(richText) {
   return richText.map((run) => run.plain_text ?? '').join('');
 }
 
+/**
+ * Look a property up by name, tolerating invisible characters.
+ *
+ * Notion property names can carry a byte-order mark or zero-width character
+ * picked up from a paste - the "Done" checkbox in All tasks is really
+ * "\uFEFFDone" - which makes an exact key lookup fail for no visible reason.
+ */
+function normalisePropertyKey(key) {
+  let out = '';
+  for (const character of key) {
+    const code = character.codePointAt(0);
+    const invisible = code === 0xfeff || (code >= 0x200b && code <= 0x200f);
+    if (!invisible) out += character;
+  }
+  return out.trim().toLowerCase();
+}
+
+export function getProperty(page, name) {
+  if (!name) return null;
+  const properties = page.properties ?? {};
+  if (properties[name]) return properties[name];
+
+  const wanted = normalisePropertyKey(name);
+  const key = Object.keys(properties).find((candidate) => normalisePropertyKey(candidate) === wanted);
+  return key ? properties[key] : null;
+}
+
 /** Unwrap formula and single-value rollup properties down to the underlying value. */
 function unwrap(property) {
   if (!property) return null;
@@ -169,7 +196,7 @@ export function readTitle(page) {
 }
 
 export function readNumber(page, name) {
-  const value = unwrap(page.properties?.[name]);
+  const value = unwrap(getProperty(page, name));
   if (!value) return null;
   if (typeof value.number === 'number') return value.number;
   // A number stored as text still deserves a best-effort read.
@@ -182,7 +209,7 @@ export function readNumber(page, name) {
 
 /** Returns an ISO date/datetime string, or null. */
 export function readDate(page, name) {
-  const property = page.properties?.[name];
+  const property = getProperty(page, name);
   if (!property) return null;
   const value = unwrap(property);
   if (value?.date?.start) return value.date.start;
@@ -194,7 +221,7 @@ export function readDate(page, name) {
 }
 
 export function readSelectName(page, name) {
-  const value = unwrap(page.properties?.[name]);
+  const value = unwrap(getProperty(page, name));
   if (!value) return null;
   if (value.select) return value.select.name ?? null;
   if (value.status) return value.status.name ?? null;
@@ -205,14 +232,21 @@ export function readSelectName(page, name) {
 }
 
 export function readMultiSelectNames(page, name) {
-  const value = unwrap(page.properties?.[name]);
+  const value = unwrap(getProperty(page, name));
   if (Array.isArray(value?.multi_select)) return value.multi_select.map((option) => option.name);
   if (value?.select?.name) return [value.select.name];
   return [];
 }
 
+export function readCheckbox(page, name) {
+  const value = unwrap(getProperty(page, name));
+  if (typeof value?.checkbox === 'boolean') return value.checkbox;
+  if (typeof value?.boolean === 'boolean') return value.boolean;
+  return null;
+}
+
 export function readRelationIds(page, name) {
-  const value = unwrap(page.properties?.[name]);
+  const value = unwrap(getProperty(page, name));
   return Array.isArray(value?.relation) ? value.relation.map((item) => item.id) : [];
 }
 

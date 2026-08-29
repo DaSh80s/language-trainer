@@ -15,7 +15,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { loadConfig, loadDotEnv, loadFeedsFromEnv, packageRoot } from './config.js';
-import { NotionClient, readTitle, richTextToPlain } from './notion.js';
+import { NotionClient, readMultiSelectNames, readNumber, readSelectName, readTitle, richTextToPlain } from './notion.js';
 import { resolveTargets } from './targets.js';
 import { computeNutrition, parseMilestones, parseWeightEntries, reviewWindow, summariseFood, summariseWeight } from './nutrition.js';
 import { computeProgress } from './progress.js';
@@ -113,9 +113,123 @@ async function commandDiscover(config, client) {
       logger.info(`Title: ${richTextToPlain(database.title ?? [])}`);
       for (const [property, definition] of Object.entries(database.properties)) {
         logger.info(`  - ${property.padEnd(28)} ${definition.type}`);
+
+        // A select's option list is the definitive set of values, unlike a
+        // sample of rows which only shows what happens to be recent.
+        const options = definition.multi_select?.options ?? definition.select?.options;
+        if (options && name === 'weeklyJournal') {
+          logger.info(`      all ${options.length} option(s): ${options.map((o) => o.name).join(' | ')}`);
+        }
       }
     } catch (error) {
       logger.error(`Could not read: ${error.message}`);
+    }
+  }
+
+  // Schemas alone do not show how a review page is identified, so show rows.
+  const journal = config.weeklyJournal;
+  if (journal.databaseId && journal.databaseId !== 'REPLACE_ME') {
+    logger.info(`\n=== Sample pages tagged [${weeklyJournalTags(config).join(", ")}] ===`);
+    try {
+      const rows = await client.queryDatabase(journal.databaseId, {
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+        maxPages: 3,
+      });
+      const tagged = rows.filter(isWeeklyJournalPage(config));
+      logger.info(`${tagged.length} of ${rows.length} recent rows carry the tag.`);
+
+      // Independent of tags: look the pages up by title.
+      for (const term of ['Weekly review', 'Weekly Review', 'Week ']) {
+        const { rows: byTitle } = await safeQuery(client, journal.databaseId, {
+          label: `journal title contains "${term}"`,
+          filter: { property: journal.titleProperty ?? 'Name', title: { contains: term } },
+          maxPages: 1,
+        });
+        logger.info(`Title contains "${term}": ${byTitle.length} row(s)`);
+        for (const page of byTitle.slice(0, 5)) {
+          logger.info(
+            `  - "${readTitle(page)}" | id=${page.id} `
+            + `| tags=[${readMultiSelectNames(page, journal.tagsProperty).join(', ')}] `
+            + `| ${journal.weekProperty}=${readNumber(page, journal.weekProperty)} `
+            + `| created ${page.created_time?.slice(0, 10)}`,
+          );
+        }
+      }
+
+      if (!tagged.length) {
+        // The configured tag matched nothing, so show what tags do exist
+        // rather than leaving the reason to guesswork.
+        const counts = new Map();
+        for (const page of rows) {
+          for (const tag of readMultiSelectNames(page, journal.tagsProperty)) {
+            counts.set(tag, (counts.get(tag) ?? 0) + 1);
+          }
+        }
+        const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+        logger.info(`Tags actually present (${ranked.length}):`);
+        for (const [tag, count] of ranked.slice(0, 30)) logger.info(`  - ${tag} (${count})`);
+
+        logger.info('Most recent rows, whatever their tag:');
+        for (const page of rows.slice(0, 5)) {
+          logger.info(`  - "${readTitle(page)}" created ${page.created_time?.slice(0, 10)}`);
+        }
+      }
+
+      for (const page of tagged.slice(0, 8)) {
+        const parts = [
+          `"${readTitle(page)}"`,
+          `created ${page.created_time?.slice(0, 10)}`,
+          `tags=[${readMultiSelectNames(page, journal.tagsProperty).join(', ')}]`,
+        ];
+        if (journal.yearProperty) parts.push(`${journal.yearProperty}=${readSelectName(page, journal.yearProperty)}`);
+        logger.info(`  - ${parts.join(' | ')}`);
+      }
+    } catch (error) {
+      logger.error(`Could not sample rows: ${error.message}`);
+    }
+  }
+
+  logger.info('\n=== Where do "Weekly review" pages actually live? ===');
+  for (const term of ['Weekly review', 'Weekly journal']) {
+    try {
+      const found = await client.request('/search', {
+        method: 'POST',
+        body: { query: term, filter: { property: 'object', value: 'page' }, page_size: 8 },
+      });
+      logger.info(`"${term}": ${found.results.length} result(s)`);
+      for (const page of found.results) {
+        const parent = page.parent ?? {};
+        const parentId = parent.database_id ?? parent.page_id ?? parent.type;
+        logger.info(
+          `  - "${readTitle(page)}" | id=${page.id} | parent ${parent.type} ${parentId} `
+          + `| created ${page.created_time?.slice(0, 10)}`,
+        );
+      }
+    } catch (error) {
+      logger.error(`Search for "${term}" failed: ${error.message}`);
+    }
+  }
+
+  const journalConfig = config.weeklyJournal;
+  if (journalConfig.weekProperty && journalConfig.databaseId !== 'REPLACE_ME') {
+    logger.info(`\n=== Rows with "${journalConfig.weekProperty}" set ===`);
+    try {
+      const { rows } = await safeQuery(client, journalConfig.databaseId, {
+        label: 'rows with a week number',
+        filter: { property: journalConfig.weekProperty, number: { is_not_empty: true } },
+        maxPages: 1,
+      });
+      logger.info(`${rows.length} row(s) carry a week number.`);
+      for (const page of rows.slice(0, 10)) {
+        logger.info(
+          `  - "${readTitle(page)}" | id=${page.id} `
+          + `| ${journalConfig.weekProperty}=${readNumber(page, journalConfig.weekProperty)} `
+          + `| tags=[${readMultiSelectNames(page, journalConfig.tagsProperty).join(', ')}] `
+          + `| created ${page.created_time?.slice(0, 10)}`,
+        );
+      }
+    } catch (error) {
+      logger.error(`Could not query by week number: ${error.message}`);
     }
   }
 
@@ -127,6 +241,38 @@ async function commandDiscover(config, client) {
     } catch (error) {
       logger.error(`  ${source.label} (${source.pageId}): ${error.message}`);
     }
+  }
+
+  // Printed last so a single look at the end of the log answers the question
+  // the whole command exists for.
+  // A plain listing is swamped by the inline databases embedded in each review
+  // page, so search by name instead.
+  logger.info('\n=== SUMMARY: databases matching the names we need ===');
+  for (const term of ['Journals', 'Food Diary', 'All tasks', 'Notes']) {
+    try {
+      const search = await client.request('/search', {
+        method: 'POST',
+        body: { query: term, filter: { property: 'object', value: 'database' }, page_size: 5 },
+      });
+      const matches = search.results
+        .map((database) => ({ id: database.id, title: richTextToPlain(database.title ?? []) }))
+        .filter((database) => database.title.toLowerCase().includes(term.toLowerCase()));
+      logger.info(`  "${term}": ${matches.map((m) => `${m.title} = ${m.id}`).join('  |  ') || 'no match'}`);
+    } catch (error) {
+      logger.error(`  "${term}": search failed: ${error.message}`);
+    }
+  }
+
+  logger.info('\n=== SUMMARY: every value the Tags property allows ===');
+  try {
+    const database = await client.getDatabase(config.weeklyJournal.databaseId);
+    const property = database.properties?.[config.weeklyJournal.tagsProperty];
+    const options = property?.multi_select?.options ?? property?.select?.options ?? [];
+    const names = options.map((option) => option.name);
+    const shown = names.slice(0, 40).join(' | ');
+    logger.info(`${names.length} option(s). First 40: ${shown}${names.length > 40 ? ' ...' : ''}`);
+  } catch (error) {
+    logger.error(`Could not read the tag vocabulary: ${error.message}`);
   }
 }
 
@@ -244,6 +390,29 @@ function isToggleLike(block) {
   return block.type.startsWith('heading_') && block[block.type]?.is_toggleable;
 }
 
+/** A page counts as a weekly review only if it carries the configured tag. */
+function isWeeklyJournalPage(config) {
+  const { tagsProperty } = config.weeklyJournal;
+  const candidates = weeklyJournalTags(config);
+  if (!tagsProperty || !candidates.length) return () => true;
+
+  const wanted = new Set(candidates.map((tag) => tag.toLowerCase()));
+  return (page) => {
+    const names = [
+      ...readMultiSelectNames(page, tagsProperty),
+      readSelectName(page, tagsProperty),
+    ].filter(Boolean);
+    return names.some((name) => wanted.has(name.toLowerCase()));
+  };
+}
+
+/** Accepts either a single tagValue or a list of candidates to try. */
+function weeklyJournalTags(config) {
+  const { tagValues, tagValue } = config.weeklyJournal;
+  if (Array.isArray(tagValues) && tagValues.length) return tagValues;
+  return tagValue ? [tagValue] : [];
+}
+
 /** Find the page for this week's review, or explain how to point at one. */
 async function findReviewPage(client, config, referenceDay, explicitPageId) {
   if (explicitPageId) return client.getPage(explicitPageId);
@@ -256,19 +425,44 @@ async function findReviewPage(client, config, referenceDay, explicitPageId) {
     );
   }
 
-  const { rows } = await safeQuery(client, databaseId, {
-    label: 'weekly journal',
-    filter: { property: dateProperty, date: { equals: referenceDay } },
-  });
+  // The Notes database has no date property, so a date filter is only used
+  // when one is actually configured; otherwise the tag does the work.
+  const { rows } = dateProperty
+    ? await safeQuery(client, databaseId, {
+      label: 'weekly journal',
+      filter: { property: dateProperty, date: { equals: referenceDay } },
+    })
+    : {
+      rows: await client.queryDatabase(databaseId, {
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+        maxPages: 3,
+      }),
+    };
 
-  if (rows.length) return rows[0];
+  // The review pages share the Notes database with everything else, so the tag
+  // is what separates them. Checked here rather than in the query because the
+  // property may be a select or a multi-select, and this works for both.
+  const tagged = rows.filter(isWeeklyJournalPage(config));
+  if (tagged.length) return tagged[0];
 
-  const recent = await client.queryDatabase(databaseId, {
+  if (rows.length) {
+    logger.warn(
+      `Found ${rows.length} page(s) dated ${referenceDay} but none tagged `
+      + `[${weeklyJournalTags(config).join(", ")}]. Check weeklyJournal.tagsProperty and tagValues.`,
+    );
+  }
+
+  const recent = (await client.queryDatabase(databaseId, {
     sorts: [{ timestamp: 'created_time', direction: 'descending' }],
-    maxPages: 1,
-  });
+    maxPages: 2,
+  })).filter(isWeeklyJournalPage(config));
 
-  if (!recent.length) throw new Error('The weekly-journal database has no pages to write into.');
+  if (!recent.length) {
+    throw new Error(
+      `No page tagged [${weeklyJournalTags(config).join(", ")}] was found in the Notes database. `
+      + 'Duplicate the Weekly review template first, or pass --page <page-id>.',
+    );
+  }
 
   logger.warn(
     `No page dated ${referenceDay}; using the most recently created page instead `
