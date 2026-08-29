@@ -15,7 +15,7 @@ const PROVIDERS = {
     label: 'Gemini',
     isConfigured: (env) => Boolean(env.GEMINI_API_KEY),
     async call({ prompt, env, temperature, maxWords, fetchImpl }) {
-      const model = env.GEMINI_MODEL || 'gemini-2.0-flash';
+      const model = env.GEMINI_MODEL || 'gemini-3.6-flash';
       const response = await fetchImpl(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
