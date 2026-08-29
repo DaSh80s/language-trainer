@@ -131,6 +131,25 @@ async function commandDiscover(config, client) {
       const tagged = rows.filter(isWeeklyJournalPage(config));
       logger.info(`${tagged.length} of ${rows.length} recent rows carry the tag.`);
 
+      if (!tagged.length) {
+        // The configured tag matched nothing, so show what tags do exist
+        // rather than leaving the reason to guesswork.
+        const counts = new Map();
+        for (const page of rows) {
+          for (const tag of readMultiSelectNames(page, journal.tagsProperty)) {
+            counts.set(tag, (counts.get(tag) ?? 0) + 1);
+          }
+        }
+        const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+        logger.info(`Tags actually present (${ranked.length}):`);
+        for (const [tag, count] of ranked.slice(0, 30)) logger.info(`  - ${tag} (${count})`);
+
+        logger.info('Most recent rows, whatever their tag:');
+        for (const page of rows.slice(0, 5)) {
+          logger.info(`  - "${readTitle(page)}" created ${page.created_time?.slice(0, 10)}`);
+        }
+      }
+
       for (const page of tagged.slice(0, 8)) {
         const parts = [
           `"${readTitle(page)}"`,
@@ -143,6 +162,27 @@ async function commandDiscover(config, client) {
       }
     } catch (error) {
       logger.error(`Could not sample rows: ${error.message}`);
+    }
+  }
+
+  logger.info('\n=== Where do "Weekly review" pages actually live? ===');
+  for (const term of ['Weekly review', 'Weekly journal']) {
+    try {
+      const found = await client.request('/search', {
+        method: 'POST',
+        body: { query: term, filter: { property: 'object', value: 'page' }, page_size: 8 },
+      });
+      logger.info(`"${term}": ${found.results.length} result(s)`);
+      for (const page of found.results) {
+        const parent = page.parent ?? {};
+        const parentId = parent.database_id ?? parent.page_id ?? parent.type;
+        logger.info(
+          `  - "${readTitle(page)}" | id=${page.id} | parent ${parent.type} ${parentId} `
+          + `| created ${page.created_time?.slice(0, 10)}`,
+        );
+      }
+    } catch (error) {
+      logger.error(`Search for "${term}" failed: ${error.message}`);
     }
   }
 
