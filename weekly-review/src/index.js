@@ -245,6 +245,20 @@ async function commandDiscover(config, client) {
 
   // Printed last so a single look at the end of the log answers the question
   // the whole command exists for.
+  logger.info('\n=== SUMMARY: named databases shared with this integration ===');
+  try {
+    const search = await client.request('/search', {
+      method: 'POST',
+      body: { filter: { property: 'object', value: 'database' }, page_size: 100 },
+    });
+    const named = search.results
+      .map((database) => ({ id: database.id, title: richTextToPlain(database.title ?? []) }))
+      .filter((database) => database.title);
+    for (const database of named) logger.info(`  ${database.id}  ${database.title}`);
+  } catch (error) {
+    logger.error(`Could not list databases: ${error.message}`);
+  }
+
   logger.info('\n=== SUMMARY: every value the Tags property allows ===');
   try {
     const database = await client.getDatabase(config.weeklyJournal.databaseId);
