@@ -1,0 +1,70 @@
+name: Weekly review
+
+on:
+  schedule:
+    # 05:00 UTC on Saturdays = 07:00 in Zurich during summer time, 06:00 in winter.
+    - cron: '0 5 * * 6'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Compute and print, but write nothing to Notion'
+        type: boolean
+        default: false
+      date:
+        description: 'Reference day (YYYY-MM-DD). Defaults to today in Zurich.'
+        type: string
+        required: false
+      page:
+        description: 'Write into this specific Notion page ID instead of finding one'
+        type: string
+        required: false
+
+concurrency:
+  group: weekly-review
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: weekly-review
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No dependencies to install: the generator uses only the Node standard library.
+      - name: Run tests
+        run: npm test
+
+      - name: Generate the review
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ICS_FEEDS: ${{ secrets.ICS_FEEDS }}
+          LLM_PROVIDERS: ${{ vars.LLM_PROVIDERS || 'gemini,groq,cloudflare' }}
+        run: |
+          set -euo pipefail
+          args="run --out out/facts.json"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then args="$args --dry-run"; fi
+          if [ -n "${{ inputs.date }}" ]; then args="$args --date ${{ inputs.date }}"; fi
+          if [ -n "${{ inputs.page }}" ]; then args="$args --page ${{ inputs.page }}"; fi
+          node src/index.js $args
+
+      # Keeps the computed numbers for a fortnight, so a surprising figure on the
+      # page can be traced back to the rows it came from.
+      - name: Upload computed facts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-review-facts
+          path: weekly-review/out/facts.json
+          retention-days: 14
+          if-no-files-found: ignore
