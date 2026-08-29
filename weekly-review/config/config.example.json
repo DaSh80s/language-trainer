@@ -2,8 +2,8 @@
   "timezone": "Europe/Zurich",
   "locale": "en-GB",
   "weeklyJournal": {
-    "_comment": "The weekly-journal database the review pages live in. Run `npm run discover` to find this ID -- it is NOT in the handoff.",
-    "databaseId": "REPLACE_ME",
+    "_comment": "The weekly-review pages are NOT in a database of their own: they live in the Notes database and are identified by the Tags property. Confirm the property names with `npm run discover`.",
+    "databaseId": "6905399d-89b8-4580-80c2-90a917b1e20c",
     "titleProperty": "Name",
     "dateProperty": "Date",
     "tagsProperty": "Tags",

@@ -15,7 +15,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { loadConfig, loadDotEnv, loadFeedsFromEnv, packageRoot } from './config.js';
-import { NotionClient, readTitle, richTextToPlain } from './notion.js';
+import { NotionClient, readMultiSelectNames, readSelectName, readTitle, richTextToPlain } from './notion.js';
 import { resolveTargets } from './targets.js';
 import { computeNutrition, parseMilestones, parseWeightEntries, reviewWindow, summariseFood, summariseWeight } from './nutrition.js';
 import { computeProgress } from './progress.js';
@@ -244,6 +244,21 @@ function isToggleLike(block) {
   return block.type.startsWith('heading_') && block[block.type]?.is_toggleable;
 }
 
+/** A page counts as a weekly review only if it carries the configured tag. */
+function isWeeklyJournalPage(config) {
+  const { tagsProperty, tagValue } = config.weeklyJournal;
+  if (!tagsProperty || !tagValue) return () => true;
+
+  const wanted = tagValue.toLowerCase();
+  return (page) => {
+    const names = [
+      ...readMultiSelectNames(page, tagsProperty),
+      readSelectName(page, tagsProperty),
+    ].filter(Boolean);
+    return names.some((name) => name.toLowerCase() === wanted);
+  };
+}
+
 /** Find the page for this week's review, or explain how to point at one. */
 async function findReviewPage(client, config, referenceDay, explicitPageId) {
   if (explicitPageId) return client.getPage(explicitPageId);
@@ -261,14 +276,30 @@ async function findReviewPage(client, config, referenceDay, explicitPageId) {
     filter: { property: dateProperty, date: { equals: referenceDay } },
   });
 
-  if (rows.length) return rows[0];
+  // The review pages share the Notes database with everything else, so the tag
+  // is what separates them. Checked here rather than in the query because the
+  // property may be a select or a multi-select, and this works for both.
+  const tagged = rows.filter(isWeeklyJournalPage(config));
+  if (tagged.length) return tagged[0];
 
-  const recent = await client.queryDatabase(databaseId, {
+  if (rows.length) {
+    logger.warn(
+      `Found ${rows.length} page(s) dated ${referenceDay} but none tagged `
+      + `"${config.weeklyJournal.tagValue}". Check weeklyJournal.tagsProperty and tagValue.`,
+    );
+  }
+
+  const recent = (await client.queryDatabase(databaseId, {
     sorts: [{ timestamp: 'created_time', direction: 'descending' }],
-    maxPages: 1,
-  });
+    maxPages: 2,
+  })).filter(isWeeklyJournalPage(config));
 
-  if (!recent.length) throw new Error('The weekly-journal database has no pages to write into.');
+  if (!recent.length) {
+    throw new Error(
+      `No page tagged "${config.weeklyJournal.tagValue}" was found in the Notes database. `
+      + 'Duplicate the Weekly review template first, or pass --page <page-id>.',
+    );
+  }
 
   logger.warn(
     `No page dated ${referenceDay}; using the most recently created page instead `
