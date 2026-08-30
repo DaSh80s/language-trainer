@@ -178,7 +178,8 @@ Before you send, check every line:
 
 ## 7. After you post
 
-The bot replies in a thread under your message: an acknowledgement and plan, then a running status
+The bot replies in a thread under your message. Its first post asks the team who is available to
+work on the role, then greets the poster and lists the plan; after that comes a running status
 line per stage (`✅ Notion opportunity created → …`, `📆 Conf-call ICS attached`, `🧠 Similar roles
 identified`, `🧲 Candidate matches made`, and the EN + DE advert links).
 
@@ -255,3 +256,7 @@ Rigby has actually been mandated on should enter through #new-roles as ordinary 
   the highest-quality extraction path.
 - **Attribution:** whoever's Slack identity posts becomes the Notion Recruiter. Under route 2 that is
   one fixed person for everything Grok finds.
+- **Availability replies are safe.** The thread opens with "who is available to work on this?", and
+  once the thread has a website advert every reply is checked by the model for edit instructions.
+  "I'm on it" comes back as `none` and the bot stays silent (`handleAdEdit`), so the only cost is
+  one cheap model call per reply.
