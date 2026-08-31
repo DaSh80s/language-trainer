@@ -372,6 +372,11 @@ export async function writeProse(facts, config) {
     `Prose: nutrition=${nutrition.provider}, progress=${progress.provider}, `
     + `meetings=${meetings.provider}, tasks=${tasks.provider}`,
   );
+  for (const [name, result] of Object.entries({ nutrition, progress, meetings, tasks })) {
+    if (!result.usedFallback) {
+      logger.info(`  ${name}: ${JSON.stringify(result.meta ?? {})} -> ${JSON.stringify(result.text.slice(0, 60))}`);
+    }
+  }
   if (nutrition.usedFallback && nutrition.attempts?.length) {
     logger.warn(`LLM providers were not used. Why: ${nutrition.attempts.join(' ; ')}`);
   }
@@ -530,8 +535,24 @@ async function commandRun(config, client, flags) {
   }
   logger.info('\n--- end preview ---\n');
 
+  logger.info('--- prose sources ---');
+  for (const [name, result] of Object.entries(proseBySection)) {
+    logger.info(`  ${name}: ${result.provider}${result.usedFallback ? ' (FALLBACK)' : ''}`);
+    if (result.usedFallback && result.attempts?.length) {
+      for (const attempt of result.attempts) logger.info(`      ${attempt.slice(0, 220)}`);
+    }
+  }
+  logger.info('');
+
   if (dryRun) {
     logger.info('Dry run: nothing was written to Notion.');
+    return;
+  }
+
+  // --create makes a new page instead of filling an existing one, so the
+  // output can be looked at without a duplicated template page to target.
+  if (flags.create) {
+    await createExamplePage(client, config, sections, referenceDay);
     return;
   }
 
@@ -569,6 +590,48 @@ async function commandRun(config, client, flags) {
   logger.info('Done.');
 }
 
+/**
+ * Create a fresh page in the journal database containing the generated
+ * sections, for looking at the output without touching a real review page.
+ *
+ * The inline databases and synced blocks from the template are not
+ * reproduced: the API cannot create linked views. This shows the generated
+ * content, not a full replacement for a duplicated template page.
+ */
+async function createExamplePage(client, config, sections, referenceDay) {
+  const journal = config.weeklyJournal;
+  const properties = {
+    [journal.titleProperty]: {
+      title: [{ text: { content: `Weekly review, ${referenceDay} (generated example)` } }],
+    },
+  };
+  if (journal.dateProperty) properties[journal.dateProperty] = { date: { start: referenceDay } };
+
+  const tag = weeklyJournalTags(config)[0];
+  if (journal.tagsProperty && tag) properties[journal.tagsProperty] = { multi_select: [{ name: tag }] };
+
+  const children = Object.entries(config.sections)
+    .filter(([, section]) => section.enabled)
+    .map(([name, section]) => ({
+      object: 'block',
+      type: 'toggle',
+      toggle: {
+        rich_text: [{ type: 'text', text: { content: section.toggle } }],
+        children: sections[name],
+      },
+    }));
+
+  const created = await client.createPage({
+    parent: { database_id: journal.databaseId },
+    properties,
+    children,
+  });
+
+  logger.info(`Created example page ${created.id}`);
+  logger.info(`  ${created.url ?? 'https://notion.so/' + created.id.replace(/-/g, '')}`);
+  return created;
+}
+
 /** Remove everything a previous run wrote from a page, leaving your own content. */
 async function commandClean(config, client, flags) {
   if (typeof flags.page !== 'string') {
@@ -576,6 +639,19 @@ async function commandClean(config, client, flags) {
   }
 
   const page = await client.getPage(flags.page);
+
+  // --archive removes the whole page, for pages this tool created itself.
+  if (flags.archive) {
+    logger.info(`Archiving page ${page.id} ("${readTitle(page)}")`);
+    if (flags['dry-run']) {
+      logger.info('Dry run: nothing archived.');
+      return;
+    }
+    await client.request(`/pages/${page.id}`, { method: 'PATCH', body: { archived: true } });
+    logger.info('Done. The page is in the Notion trash and can be restored from there.');
+    return;
+  }
+
   logger.info(`Cleaning generated blocks from ${page.id} ("${readTitle(page)}")`);
 
   const toggles = (await client.getBlockChildren(page.id)).filter(isToggleLike);

@@ -13,6 +13,8 @@ on:
           - run
           - discover
           - clean
+          - example
+          - archive
         default: run
       dry_run:
         description: 'Compute and print, but write nothing to Notion'
@@ -71,6 +73,17 @@ jobs:
           # Removes what a previous run wrote, for undoing a mistaken write.
           if [ "${{ inputs.mode }}" = "clean" ]; then
             node src/index.js clean --page "${{ inputs.page }}"
+            exit 0
+          fi
+
+          # Archives a page outright, for example pages this tool created.
+          if [ "${{ inputs.mode }}" = "archive" ]; then
+            node src/index.js clean --page "${{ inputs.page }}" --archive
+            exit 0
+          fi
+
+          if [ "${{ inputs.mode }}" = "example" ]; then
+            node src/index.js run --create
             exit 0
           fi
 
