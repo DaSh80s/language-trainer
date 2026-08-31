@@ -33,6 +33,21 @@ function splitArticle(word) {
   return [null, word];
 }
 
+function parseVerbs(raw) {
+  const seen = new Set();
+  return String(raw || '')
+    .split(/[,;\n]+/)
+    .map((v) => v.trim())
+    .filter((v) => {
+      if (!v) return false;
+      const k = v.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .slice(0, 40);
+}
+
 function dueStatus(v) {
   if (!v.nextReview) return { label: 'new', color: 'var(--muted)' };
   const diffDays = Math.ceil((new Date(v.nextReview).getTime() - Date.now()) / 86400000);
@@ -198,6 +213,10 @@ export default function LanguagePracticeApp() {
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState(null);
 
+  // Verb drill state
+  const [verbInput, setVerbInput] = useState('');
+  const [verbCursor, setVerbCursor] = useState(0);
+
   // Vocabulary view state
   const [vocabFilter, setVocabFilter] = useState('all');
   const [vocabSearch, setVocabSearch] = useState('');
@@ -271,6 +290,10 @@ export default function LanguagePracticeApp() {
       const errors = localStorage.getItem(`errors-${selectedLanguage}`);
       if (errors) setCommonErrors(JSON.parse(errors)); else setCommonErrors([]);
 
+      const verbs = localStorage.getItem(`verbs-${selectedLanguage}`);
+      setVerbInput(verbs || '');
+      setVerbCursor(0);
+
       const ach = localStorage.getItem('achievements');
       if (ach) setAchievements(JSON.parse(ach));
 
@@ -288,6 +311,10 @@ export default function LanguagePracticeApp() {
   };
 
   const saveVocabulary = (vocab) => localStorage.setItem(`vocab-${selectedLanguage}`, JSON.stringify(vocab));
+  const updateVerbInput = (raw) => {
+    setVerbInput(raw);
+    try { localStorage.setItem(`verbs-${selectedLanguage}`, raw); } catch (e) { /* ignore */ }
+  };
   const savePracticeHistory = (history) => localStorage.setItem(`history-${selectedLanguage}`, JSON.stringify(history));
 
   const updateStreak = () => {
@@ -311,7 +338,10 @@ export default function LanguagePracticeApp() {
     }
   };
 
-  const getSystemPrompt = () => {
+  const getSystemPrompt = (verbCursorOverride) => {
+    const verbs = parseVerbs(verbInput);
+    const cursor = typeof verbCursorOverride === 'number' ? verbCursorOverride : verbCursor;
+    const focusVerb = verbs.length ? verbs[cursor % verbs.length] : null;
     const levels = {
       A1: 'complete beginner', A2: 'elementary', B1: 'intermediate',
       B2: 'upper intermediate', C1: 'advanced', C2: 'mastery/native-like',
@@ -334,6 +364,25 @@ ONE question at a time. Format:
 ${isDrilling ? 'After feedback on a MISTAKE, ask: "Another drill on this? (Y/N)"' : 'ONLY if user makes a MISTAKE/ERROR, ask: "Drill this more? (Y/N)". If answer is CORRECT, do NOT ask - just give next exercise.'}
 
 Keep it SHORT and snappy. Use emojis.`,
+      verbs: `Verb drill for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext}
+
+${verbs.length
+  ? `The learner is committing these verbs to memory:\n${verbs.map((v, i) => `${i + 1}. ${v}`).join('\n')}\n\nFOCUS VERB for your next exercise: **${focusVerb}**. The sentence you give MUST require exactly this verb — do not drift to another verb on the list.`
+  : `The learner has not named any verbs yet. Pick the 8 most useful ${levels[proficiencyLevel]} verbs in ${selectedLanguage}, tell them which you picked in your first message, then drill those in rotation.`}
+
+${usedSentences.length > 0 ? `Do NOT repeat these English sentences you already gave:\n${usedSentences.slice(-10).join('\n')}\n\n` : ''}
+
+${isDrilling ? `DRILLING MODE 🎯: stay on the same verb, but change the tense and the person.\n\n` : ''}
+
+ONE exercise per message. Format:
+1. ONE short English sentence to translate into ${selectedLanguage} — put it in "quotes".
+2. In square brackets, name the tense and person you want, e.g. [past · du-form]. Vary these every turn so the whole conjugation gets covered over the session.
+3. Stop and wait for the answer.
+4. Then give: ✓ the correct translation ✓ the verb spelled out as infinitive → the form used ✓ ONE short note on why. If the verb is irregular, separable, reflexive, or governs a particular case or preposition, say so in one line.
+5. Only if the answer was WRONG, ask: "Drill this verb again? (Y/N)". If it was right, move straight on.
+
+Every 5 exercises, give a one-line score and name the verbs still looking shaky.
+Keep it SHORT and snappy. Use emojis 🔁`,
       vocabulary: `Teach ${selectedLanguage} vocabulary (${levels[proficiencyLevel]}). ${topicContext} Give 5 words with: word, IPA, example. Then ask user to make sentences. Keep feedback SHORT. Use emojis 📖`,
       translation: `Translation drills for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give 3-5 sentences. Alternate directions. SHORT feedback with emojis ✓`,
       listening: `Listening practice for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Describe a scenario, ask 2-3 questions. Keep it SHORT. Use emojis 👂`,
@@ -361,7 +410,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     return modes[practiceMode] || '';
   };
 
-  const callClaudeAPI = async (messages) => {
+  const callClaudeAPI = async (messages, verbCursorOverride) => {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -369,7 +418,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
         messages,
-        system: getSystemPrompt(),
+        system: getSystemPrompt(verbCursorOverride),
       }),
     });
     if (!response.ok) throw new Error('API request failed');
@@ -386,9 +435,14 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       setUserInput('');
       setIsLoading(true);
       try {
-        const drillPrompt = { role: 'user', content: 'Give me another practice sentence on this same concept.' };
+        const drillPrompt = {
+          role: 'user',
+          content: practiceMode === 'verbs'
+            ? 'Another sentence with the same verb, but a different tense and person.'
+            : 'Give me another practice sentence on this same concept.',
+        };
         const apiMessages = [...conversation.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content })), drillPrompt];
-        const response = await callClaudeAPI(apiMessages);
+        const response = await callClaudeAPI(apiMessages, verbCursor);
         setConversation([...conversation, drillPrompt, { role: 'assistant', content: response }]);
         if (response.toLowerCase().includes('translate')) {
           const match = response.match(/"([^"]+)"/);
@@ -407,9 +461,16 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       setUserInput('');
       setIsLoading(true);
       try {
-        const nextPrompt = { role: 'user', content: 'Give me the next grammar exercise (different concept).' };
+        const nextPrompt = {
+          role: 'user',
+          content: practiceMode === 'verbs'
+            ? 'Move on to the next verb.'
+            : 'Give me the next grammar exercise (different concept).',
+        };
+        const nextCursor = verbCursor + 1;
+        if (practiceMode === 'verbs') setVerbCursor(nextCursor);
         const apiMessages = [...conversation.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content })), nextPrompt];
-        const response = await callClaudeAPI(apiMessages);
+        const response = await callClaudeAPI(apiMessages, nextCursor);
         setConversation([...conversation, nextPrompt, { role: 'assistant', content: response }]);
         if (response.toLowerCase().includes('translate')) {
           const match = response.match(/"([^"]+)"/);
@@ -431,7 +492,15 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
 
     try {
       const apiMessages = updated.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content }));
-      const response = await callClaudeAPI(apiMessages);
+      // Verb drill: every answered exercise moves the rotation on. Repeating the
+      // same verb is driven by the 'Y' branch above, which re-sends the current
+      // cursor, so freezing it here on isDrilling would strand the focus verb.
+      const nextCursor = verbCursor + 1;
+      if (practiceMode === 'verbs') {
+        setVerbCursor(nextCursor);
+        setIsDrilling(false);
+      }
+      const response = await callClaudeAPI(apiMessages, nextCursor);
       setConversation([...updated, { role: 'assistant', content: response }]);
 
       if (practiceMode === 'grammar' && !isDrilling && (response.toLowerCase().includes('correct') || response.toLowerCase().includes('mistake'))) {
@@ -444,7 +513,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
         }
       }
 
-      if (practiceMode === 'grammar' && response.toLowerCase().includes('translate')) {
+      if ((practiceMode === 'grammar' || practiceMode === 'verbs') && response.toLowerCase().includes('translate')) {
         const match = response.match(/"([^"]+)"/);
         if (match && match[1]) setUsedSentences((prev) => [...prev, match[1]].slice(-20));
       }
@@ -464,6 +533,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     setUsedSentences([]);
     setIsDrilling(false);
     setDrillingContext('');
+    setVerbCursor(0);
     await updateStreak();
 
     const newSession = {
@@ -487,9 +557,10 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
         listening: 'Give me a listening exercise.',
         pronunciation: 'Help me with pronunciation.',
         articles: 'Start the article gender game. Give me the first noun.',
+        verbs: 'Start the verb drill. Give me the first sentence to translate.',
         weakAreas: 'Focus on my weak areas.',
       };
-      const response = await callClaudeAPI([{ role: 'user', content: prompts[practiceMode] }]);
+      const response = await callClaudeAPI([{ role: 'user', content: prompts[practiceMode] }], 0);
       setConversation([{ role: 'assistant', content: response }]);
     } catch (error) {
       console.error('Start error:', error);
@@ -630,6 +701,7 @@ Format:
   const modes = [
     { id: 'conversation', name: 'Conversation' },
     { id: 'grammar', name: 'Grammar' },
+    { id: 'verbs', name: 'Verb Drill' },
     { id: 'vocabulary', name: 'Vocabulary' },
     { id: 'translation', name: 'Translation' },
     { id: 'articles', name: 'Article Gender' },
@@ -647,6 +719,11 @@ Format:
   const answersLogged = conversation.filter((m) => m.role === 'user').length;
   const liveMin = getCurrentSessionMinutes();
   const liveTime = `${String(Math.floor(liveMin / 60)).padStart(2, '0')}:${String(liveMin % 60).padStart(2, '0')}`;
+
+  // ── Verb drill derived data ──
+  const verbListParsed = parseVerbs(verbInput);
+  const nextVerb = verbListParsed.length ? verbListParsed[verbCursor % verbListParsed.length] : null;
+  const removeVerb = (verb) => updateVerbInput(verbListParsed.filter((v) => v !== verb).join(', '));
 
   // ── Vocabulary derived data ──
   const masteredCount = vocabularyList.filter((v) => (v.reviewCount || 0) >= 5).length;
@@ -730,6 +807,58 @@ Format:
                     <Select label="Mode" value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} options={modes.map((m) => ({ value: m.id, label: m.name }))} />
                   </div>
                   <Select label="Topic" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} options={topics.map((t) => ({ value: t, label: cap(t) }))} />
+
+                  {practiceMode === 'verbs' && (
+                    <div>
+                      <div style={labelStyle}>Verbs to drill</div>
+                      <textarea
+                        value={verbInput}
+                        onChange={(e) => updateVerbInput(e.target.value)}
+                        rows={3}
+                        placeholder={'e.g. gehen, nehmen,\nsich freuen auf'}
+                        style={{
+                          width: '100%', background: 'var(--input)', border: '1px solid var(--border)', borderRadius: 7,
+                          padding: '10px 12px', fontSize: 13.5, color: 'var(--ink)', fontFamily: "'IBM Plex Sans',sans-serif",
+                          resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+                        }}
+                      />
+                      <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 6 }}>
+                        {verbListParsed.length
+                          ? `${verbListParsed.length} verb${verbListParsed.length === 1 ? '' : 's'} · saved for ${selectedLanguage}`
+                          : 'Separate with commas or new lines. Leave empty and Fluo picks useful ones.'}
+                      </div>
+                      {verbListParsed.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 9 }}>
+                          {verbListParsed.map((v) => {
+                            const isNext = v === nextVerb && conversation.length > 0;
+                            return (
+                              <span
+                                key={v}
+                                title={isNext ? 'Up next' : 'Click × to remove'}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 999,
+                                  padding: '3px 7px 3px 9px', font: "500 11.5px 'IBM Plex Sans'",
+                                  background: isNext ? 'var(--accent-bg)' : 'var(--field)',
+                                  border: `1px solid ${isNext ? 'var(--accent)' : 'var(--border)'}`,
+                                  color: isNext ? 'var(--accent)' : 'var(--soft)',
+                                }}
+                              >
+                                {v}
+                                <button
+                                  onClick={() => removeVerb(v)}
+                                  aria-label={`Remove ${v}`}
+                                  style={{ border: 'none', background: 'none', color: 'var(--faint)', cursor: 'pointer', font: "500 13px 'IBM Plex Sans'", lineHeight: 1, padding: 0 }}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <button
                     onClick={handleStartPractice}
                     disabled={!practiceMode || isLoading}

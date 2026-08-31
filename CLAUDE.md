@@ -6,7 +6,8 @@ An AI-powered language practice app built with React + Vite, deployed on Vercel,
 _Update this section at the end of each session so any device can pick up where you left off._
 
 - **App state:** Live and working at https://language-trainer-kappa.vercel.app
-- **Last worked on:** Shipped the **Fluo redesign** (2026-06-28) — full visual overhaul to the warm editorial "Fluo" design system: CSS-variable theming with a working light (terracotta) / dark (fluo-lime) toggle persisted to `localStorage['lt_theme']`, Spectral + IBM Plex Sans/Mono fonts, new header + segmented tabs, two-column Practice screen (setup rail + chronological tutor chat with a thin mode/level context strip + docked answer bar), card-based Vocabulary grid, and a Progress dashboard with a weekly-activity chart. All existing logic (API, conversation/drill flow, streak, vocab & error storage) was preserved — this was a reskin, not a rewrite. Name kept as **Fluo**; default theme is **light**.
+- **Last worked on:** Added **Verb Drill** mode (2026-08-31) — a ninth practice mode for committing specific verbs to memory. You type the verbs you want to drill into a box in the Practice setup rail (comma or newline separated); they are saved per language in `localStorage['verbs-<Language>']` and shown as removable chips. The app rotates through the list deterministically (a `verbCursor` in state, injected into the system prompt as the FOCUS VERB) so every verb gets even coverage instead of the model favouring a few. Each exercise is one English sentence to translate, with the tense and person named in brackets, and the feedback spells out infinitive -> conjugated form plus any irregular/separable/reflexive/case quirk. Wrong answers offer "Drill this verb again? (Y/N)" — Y keeps the same verb with a new tense/person, N advances. Leaving the box empty makes the model pick 8 useful verbs for the level.
+- **Previously:** Shipped the **Fluo redesign** (2026-06-28) — full visual overhaul to the warm editorial "Fluo" design system: CSS-variable theming with a working light (terracotta) / dark (fluo-lime) toggle persisted to `localStorage['lt_theme']`, Spectral + IBM Plex Sans/Mono fonts, new header + segmented tabs, two-column Practice screen (setup rail + chronological tutor chat with a thin mode/level context strip + docked answer bar), card-based Vocabulary grid, and a Progress dashboard with a weekly-activity chart. All existing logic (API, conversation/drill flow, streak, vocab & error storage) was preserved — this was a reskin, not a rewrite. Name kept as **Fluo**; default theme is **light**.
 - **Also in this repo (2026-08-29):** `weekly-review/` — a scheduled generator that fills the Notion **Weekly review** page (fitness/nutrition, year & week progress, next week's meetings, next week's tasks). It replaces the four Notion custom AI blocks, which could not fetch URLs, could not see Notion Calendar, and did not run on duplication. Code computes every number from the Notion API; a free model (Gemini → Groq → Cloudflare, with a deterministic fallback) writes only the prose. Maintenance calories are read live from the Notion note, never hardcoded. Runs from `.github/workflows/weekly-review.yml` each Saturday. See `weekly-review/README.md`.
 - **In progress:** Nothing. The weekly-review generator ran live on 2026-08-29 and filled all four toggles of the 29 August review page. Config is verified against the real workspace (Food Diary, Notes, All tasks, Journals). Optional next steps: add `GEMINI_API_KEY` / `GROQ_API_KEY` / `CLOUDFLARE_*` secrets for nicer prose, and `ICS_FEEDS` to enable the meetings section.
 - **Next ideas:**
@@ -23,6 +24,7 @@ _Update this section at the end of each session so any device can pick up where 
 | Vocabulary | Learn 5 new words with IPA + examples |
 | Translation | Bidirectional translation drills |
 | **Article Gender** | App gives a bare noun → user types the article; tips & rules provided |
+| **Verb Drill** | You supply the verbs; app rotates through them with translate-this-sentence drills, varying tense & person |
 | Listening | Scenario-based comprehension questions |
 | Pronunciation | IPA breakdowns and sound practice |
 | Weak Areas | Targeted practice based on logged errors |
@@ -50,6 +52,9 @@ https://github.com/DaSh80s/language-trainer
 | Variable | Where |
 |---|---|
 | `ANTHROPIC_API_KEY` | `.env` locally, Vercel dashboard in production |
+| `VITE_APP_PASSWORD` | `.env` locally, Vercel dashboard in production — this is the password on the live site's gate |
+
+> **Forgotten the site password?** It is never written into this repo (the repo is **public**). Read it from `VITE_APP_PASSWORD` in the local `.env`, or from Vercel → project → Settings → Environment Variables. Claude also keeps it in Daniel's private memory, so just asking "what's the Fluo password?" in any session works. Once entered, the browser caches it in `localStorage['lt_auth']`, so only a new device or a cleared browser asks again.
 
 The Anthropic API key lives in **platform.claude.com** → Dan's Individual Org → Default workspace.
 
