@@ -54,7 +54,9 @@ https://github.com/DaSh80s/language-trainer
 | `ANTHROPIC_API_KEY` | `.env` locally, Vercel dashboard in production |
 | `VITE_APP_PASSWORD` | `.env` locally, Vercel dashboard in production — this is the password on the live site's gate |
 
-> **Forgotten the site password?** It is never written into this repo (the repo is **public**). Read it from `VITE_APP_PASSWORD` in the local `.env`, or from Vercel → project → Settings → Environment Variables. Claude also keeps it in Daniel's private memory, so just asking "what's the Fluo password?" in any session works. Once entered, the browser caches it in `localStorage['lt_auth']`, so only a new device or a cleared browser asks again.
+> **Forgotten the site password?** It is never written into this repo (the repo is **public**). Read it from **Vercel → project → Settings → Environment Variables** — *not* from the local `.env`, which has drifted out of date and does **not** match the live site. `VITE_*` vars are inlined at build time, so the live gate uses whatever Vercel built with. Claude also keeps the current value in Daniel's private memory, so just asking "what's the Fluo password?" in any session works. Once entered, the browser caches it in `localStorage['lt_auth']`, so only a new device or a cleared browser asks again.
+>
+> **The gate is cosmetic, not security.** Because the password is inlined at build time it is readable in plain text in the public JS bundle by anyone who looks. It keeps casual visitors out and nothing more. Never put anything genuinely sensitive in a `VITE_` var — secrets belong server-side in `api/chat.js`, which is why the Anthropic key is proxied there.
 
 The Anthropic API key lives in **platform.claude.com** → Dan's Individual Org → Default workspace.
 
