@@ -28,6 +28,7 @@ Hard rules:
 - NEVER flag the absence of an idiom or a figure of speech. "You could have used a Redewendung here" is unhelpful and pushes learners into forced, overstuffed German.
 - Never invent a fault to seem useful. A short, plain, natural sentence needs no upgrade.
 - Do not flag a turn that is only one or two words, or that is a direct answer to a drill.
+- If the learner wrote in English rather than the target language, return nothing at all. Some practice modes ask for answers in English, and judging those for German naturalness is meaningless.
 
 ALSO record what went RIGHT. If the learner used a modal particle, a reaction token, a correct collocation, a softened request or a signposting phrase naturally, record it as a positive. Positives drive the learner's score upward and are the main reason they keep going — do not skip them because finding faults feels more useful.
 

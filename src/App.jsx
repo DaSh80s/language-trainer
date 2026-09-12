@@ -229,6 +229,7 @@ export default function LanguagePracticeApp() {
   const [natProgress, setNatProgress] = useState({});
   const [natServed, setNatServed] = useState([]);
   const [natItemShownAt, setNatItemShownAt] = useState(null);
+  const [natHintLevel, setNatHintLevel] = useState(0);
   const [natElapsed, setNatElapsed] = useState(0);
   // The ride-along pass: on by default, but it costs a call per turn, so it is
   // switchable and the choice is remembered.
@@ -621,7 +622,12 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
   /** Render a drill item into a chat message. Built locally — no API call. */
   const natRender = (item) => {
     const p = nat.present(item);
-    let out = `**${p.instruction}**\n\n${p.stimulus}`;
+    // With several categories selected it is not otherwise obvious what is
+    // being drilled, which makes the feedback harder to learn from.
+    const cat = natCategories.length > 1
+      ? `*${nat.CATEGORY_BY_ID[item.categoryId]?.label || item.categoryId}*\n\n`
+      : '';
+    let out = `${cat}**${p.instruction}**\n\n${p.stimulus}`;
     if (p.extra) out += `\n\n${p.extra}`;
     return out;
   };
@@ -669,10 +675,73 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     }
   };
 
+  /** Advance without judging. Used by skip, and after a judged answer. */
+  const natAdvance = (progress, msgs) => {
+    const next = nat.pickNext(natItems, progress, natServed);
+    if (next) {
+      setNatItem(next);
+      setNatItemShownAt(Date.now());
+      setNatServed((prevServed) => [...prevServed, next.id]);
+      return [...msgs, { role: 'assistant', content: natRender(next) }];
+    }
+    setNatItem(null);
+    return [...msgs, { role: 'assistant', content: 'Nothing left in this selection — pick another category on the left.' }];
+  };
+
   const natJudge = async () => {
     const item = natItem;
     const answer = userInput.trim();
     if (!item || !answer) return;
+
+    const control = answer.toLowerCase();
+
+    // A nudge. Local, free, and it does not consume the item or log anything.
+    if (control === 'hint') {
+      setUserInput('');
+      const level = natHintLevel + 1;
+      setNatHintLevel(level);
+      setConversation([...conversation, { role: 'assistant', content: `💡 ${nat.hintFor(item, level)}` }]);
+      return;
+    }
+
+    // Skipping IS declining the opening, so it is logged as one. Otherwise the
+    // reach score could be inflated simply by skipping everything difficult —
+    // the exact avoidance this metric exists to catch.
+    if (control === 'skip') {
+      setUserInput('');
+      const probed = nat.probesReach(item);
+      if (probed) {
+        const skipped = {
+          id: `${item.id}-${Date.now()}`,
+          categoryId: item.categoryId,
+          itemId: item.id,
+          particle: item.particle,
+          probedReach: true,
+          reached: false,
+          landed: false,
+          severity: null,
+          learnerText: '(skipped)',
+          naturalText: item.target,
+          explanation: 'Skipped.',
+          timestamp: new Date().toISOString(),
+        };
+        setNatFindings((prev) => {
+          const nextF = [...prev, skipped];
+          try { localStorage.setItem(`naturalness-${selectedLanguage}`, JSON.stringify(nextF.slice(-600))); } catch (e) { /* ignore */ }
+          return nextF;
+        });
+      }
+      const prevP = natProgress[item.id] || { seen: 0, missed: 0 };
+      const progress = { ...natProgress, [item.id]: { seen: prevP.seen + 1, missed: prevP.missed, lastSeen: new Date().toISOString() } };
+      setNatProgress(progress);
+      saveNatProgress(progress);
+      setNatHintLevel(0);
+      setConversation(natAdvance(progress, [
+        ...conversation,
+        { role: 'assistant', content: `⏭ Skipped. It wanted: **${item.target}**${probed ? '\n\nSkips count as an opening not taken — otherwise the score could be improved just by avoiding the hard ones.' : ''}` },
+      ]));
+      return;
+    }
 
     const elapsedSec = natItemShownAt ? (Date.now() - natItemShownAt) / 1000 : 0;
     const withAnswer = [...conversation, { role: 'user', content: answer }];
@@ -704,6 +773,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
         learnerText: answer,
         naturalText: j.naturalText,
         explanation: j.explanation,
+        hinted: natHintLevel > 0,
         timestamp: new Date().toISOString(),
       };
       const findings = [...natFindings, finding];
@@ -742,18 +812,8 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
         body += `\n\n⏱ ${Math.round(elapsedSec)}s of ${item.timeLimitSec}s${over ? ' — over. Repair only counts if it is fast.' : ''}`;
       }
 
-      const msgs = [...withAnswer, { role: 'assistant', content: body }];
-      const next = nat.pickNext(natItems, progress, natServed);
-      if (next) {
-        setNatItem(next);
-        setNatItemShownAt(Date.now());
-        setNatServed((prevServed) => [...prevServed, next.id]);
-        msgs.push({ role: 'assistant', content: natRender(next) });
-      } else {
-        setNatItem(null);
-        msgs.push({ role: 'assistant', content: 'That is every item in this selection. End the session to save it.' });
-      }
-      setConversation(msgs);
+      setNatHintLevel(0);
+      setConversation(natAdvance(progress, [...withAnswer, { role: 'assistant', content: body }]));
     } catch (error) {
       console.error('Naturalness judge error:', error);
       setConversation([...withAnswer, { role: 'assistant', content: `Could not judge that answer — ${error.message}` }]);
@@ -976,6 +1036,12 @@ Format:
 
   // ── Practice derived data ──
   const answersLogged = conversation.filter((m) => m.role === 'user').length;
+  // Openings taken so far this session — the number that actually matters,
+  // visible while drilling rather than only afterwards on the dashboard.
+  const natSessionProbes = sessionStartTime
+    ? natFindings.filter((f) => f.probedReach && new Date(f.timestamp).getTime() >= sessionStartTime)
+    : [];
+  const natSessionTaken = natSessionProbes.filter((f) => f.reached).length;
   const liveMin = getCurrentSessionMinutes();
   const liveTime = `${String(Math.floor(liveMin / 60)).padStart(2, '0')}:${String(liveMin % 60).padStart(2, '0')}`;
 
@@ -1198,6 +1264,11 @@ Format:
                     <div style={{ background: 'var(--green-bg)', border: '1px solid var(--green-border)', borderRadius: 9, padding: '13px 14px', marginBottom: 13 }}>
                       <div style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--green)', marginBottom: 6 }}>● Live · {liveTime}</div>
                       <div style={{ fontSize: 12.5, color: 'var(--green-ink)' }}>{answersLogged} answer{answersLogged === 1 ? '' : 's'} · {cap(modeName.toLowerCase())}</div>
+                      {practiceMode === 'naturalness' && natSessionProbes.length > 0 && (
+                        <div style={{ fontSize: 12.5, color: 'var(--green-ink)', marginTop: 4 }}>
+                          {natSessionTaken}/{natSessionProbes.length} openings taken
+                        </div>
+                      )}
                     </div>
                   )}
                   {conversation.length > 0 && (
@@ -1312,7 +1383,11 @@ Format:
                       Send
                     </button>
                   </div>
-                  <div style={{ font: "400 11px 'IBM Plex Mono'", color: 'var(--faint)', marginTop: 10 }}>↵ send · type "hint" for a nudge{practiceMode === 'grammar' ? ' · Y/N to drill' : ''}</div>
+                  <div style={{ font: "400 11px 'IBM Plex Mono'", color: 'var(--faint)', marginTop: 10 }}>
+                    ↵ send
+                    {practiceMode === 'naturalness' && ' · "hint" for a nudge · "skip" to pass'}
+                    {(practiceMode === 'grammar' || practiceMode === 'verbs') && ' · Y/N to drill'}
+                  </div>
                 </div>
               </div>
             </div>

@@ -111,6 +111,53 @@ export function probesReach(item) {
   return Boolean(FORMATS[item.format]?.probesReach);
 }
 
+/**
+ * A nudge, in two levels. Local, free, no API call.
+ *
+ * Level 1 names the DEVICE the item is asking for without saying which one.
+ * That is the genuinely useful hint, because the hard part of a reach probe is
+ * knowing that a particle belongs there at all — being told the sentence starts
+ * "Das ist…" helps nobody.
+ *
+ * Level 2 reveals the opening, or eliminates a wrong option.
+ */
+const DEVICE = {
+  particles: 'a modal particle — a small word carrying attitude rather than content',
+  reactions: 'a reaction token, one to three words',
+  discourse: 'a signposting phrase that tells the listener where you are',
+  register: 'a softer construction — think Konjunktiv II',
+  repair: 'a repair formula that keeps the sentence alive',
+  collocations: 'the conventional verb for that noun, which is probably not machen',
+  interference: 'a German structure that does not mirror the English one',
+};
+
+export function hintFor(item, level = 1) {
+  if (!item) return null;
+
+  const analytic = item.format === 'minimalPair' || item.format === 'reverseGloss';
+
+  if (level <= 1 && !analytic) {
+    const device = DEVICE[item.categoryId];
+    if (device) return `This one wants ${device}. Try again, or type **hint** for more.`;
+  }
+
+  if (item.format === 'which') {
+    const opts = item.prompt?.options || [];
+    const wrong = opts.filter((o) => o !== item.target);
+    if (!wrong.length) return 'Think about what each option does to the sentence.';
+    return `Not **${wrong[0]}**.`;
+  }
+
+  const words = String(item.target || '').trim().split(/\s+/);
+  // Reaction and short answers are one to three words by design, so revealing
+  // "the first two words" would hand over the whole thing. Reveal letters instead.
+  if (words.length <= 2) {
+    const head = words[0].replace(/[^\p{L}]/gu, '').slice(0, 2);
+    return head ? `It starts with **${head}**…` : 'Think about what the situation calls for.';
+  }
+  return `It starts: **${words.slice(0, 2).join(' ')}**…`;
+}
+
 // ── Judging ───────────────────────────────────────────────────────────────────
 
 const JUDGE_SYSTEM = `You judge whether a German learner's answer sounds NATIVE, not merely correct.
