@@ -17,6 +17,11 @@
   .fluo-vocab-grid { grid-template-columns: 1fr !important; }
   .fluo-two-col { grid-template-columns: 1fr !important; }
   .fluo-header { flex-wrap: wrap; gap: 14px; }
+  /* The mic button pushed Send past the right edge on a 375px phone. */
+  .fluo-answerbar { padding-left: 14px !important; padding-right: 14px !important; }
+  .fluo-answerrow { gap: 8px !important; }
+  .fluo-answerrow button { padding-left: 16px !important; padding-right: 16px !important; }
+  .fluo-mic { width: 44px !important; }
 }
 
 /* Hover affordances kept light so they read in both themes */

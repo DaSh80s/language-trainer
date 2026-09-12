@@ -1357,8 +1357,8 @@ Format:
                 </div>
 
                 {/* docked answer bar */}
-                <div style={{ padding: '16px 26px 22px', borderTop: '1px solid var(--border)', background: 'var(--panel)' }}>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                <div className="fluo-answerbar" style={{ padding: '16px 26px 22px', borderTop: '1px solid var(--border)', background: 'var(--panel)' }}>
+                  <div className="fluo-answerrow" style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
                     <input
                       ref={inputRef}
                       type="text"
@@ -1374,6 +1374,7 @@ Format:
                         onClick={toggleListen}
                         disabled={conversation.length === 0 || isLoading}
                         title={isListening ? 'Stop dictating' : 'Answer out loud'}
+                        className="fluo-mic"
                         style={{
                           flex: '0 0 auto', width: 50, minHeight: 50, borderRadius: 9, cursor: 'pointer',
                           border: `1.5px solid ${isListening ? 'var(--accent)' : 'var(--border)'}`,
