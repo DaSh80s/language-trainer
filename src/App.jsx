@@ -1204,6 +1204,9 @@ Format:
                           <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 8 }}>
                             {natItems.length} item{natItems.length === 1 ? '' : 's'} ready · {natBuilt.length} of {nat.CATEGORIES.length} categories built
                           </div>
+                          <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 4 }}>
+                            Level and topic do not affect these drills.
+                          </div>
                         </>
                       )}
                     </div>
