@@ -107,4 +107,19 @@ export const FORMATS = {
     label: 'What is being conveyed?',
     probesReach: false,
   },
+  // Reactions: a line is given, the learner answers in one to three words.
+  // Learners can narrate but cannot react, which is why they sound like they
+  // are delivering a monologue rather than taking part in one.
+  react: {
+    id: 'react',
+    label: 'React to this',
+    probesReach: true,
+  },
+  // Register: the same content restated at a named politeness level. The
+  // grammar is already known; this is grammar used for social effect.
+  soften: {
+    id: 'soften',
+    label: 'Say that again, but',
+    probesReach: true,
+  },
 };

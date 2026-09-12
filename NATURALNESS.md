@@ -1,7 +1,8 @@
 # Naturalness Layer — build plan
 
-Status: **steps 1-4 built and live** (2026-09-12). Particles drilling works end to end; the
-remaining categories are declared but empty, and the ride-along detector and voice are still to come.
+Status: **complete** (2026-09-12). All seven categories built (245 items), the ride-along
+detector runs in the ordinary practice modes, and voice is in. Step 5 — *use it, then tune* —
+is the only remaining item, and that one is Daniel's rather than mine.
 
 A second pillar alongside the grammar drilling, targeting what separates *correct* German
 from *native-sounding* German. This plan is a revision of the original spec, narrowed after
@@ -146,10 +147,34 @@ marked for review rather than presented as settled.
 3. **Drill engine.** Serve and rotate items, judge answers via the model, log findings.
 4. **Scoring and dashboard.** Reach and hit rate as above, particles only.
 5. **Use it, then tune.** Real sessions before any more content gets written.
-6. **Second category** (`reactions`) — validates the contract is genuinely language- and
-   category-agnostic. Then the ride-along detector in other modes. Then voice.
+6. ~~**Second category** (`reactions`), the ride-along detector, voice.~~ **Done.** All seven
+   categories are built, the detector runs in the ordinary modes, and voice is in.
 
-Content for the remaining categories gets written only after step 5 says where the gap is.
+### What got built in step 6
+
+**All seven categories — 245 items.** particles 62, interference 41, collocations 37, reactions 28,
+discourse 28, register 28, repair 21. Each is its own file under `src/naturalness/modules/de/`;
+`de.js` just assembles them, so the whole German module is still one lazily-loaded chunk.
+
+Two formats were added for categories the original five did not fit: `react` (a line is given, the
+learner answers in one to three words) and `soften` (restate the same content at a named politeness
+level). Repair items carry `timeLimitSec`, because a repair formula you have thirty seconds to
+compose is not a repair — the UI shows a countdown and the elapsed time reaches the judge.
+
+**The ride-along detector** (`detector.js`) runs on the learner's turns in the *ordinary* modes,
+fired in parallel with the tutor reply so it never adds waiting. One call per turn with all seven
+categories' hints composed into a single prompt. It records positives as well as negatives, caps
+findings at three (enforced on parse, not only in the prompt), and stays silent on outright
+grammatical errors so it cannot double-report against the grammar engine. A cheap local gate skips
+turns too short to be worth a call. Toggleable in the rail and remembered.
+
+Free-text findings are stored with `probedReach: false`, so they feed the hit rate but can never
+corrupt reach — only a designed drill knows what the opening was.
+
+**Voice** (`src/voice.js`) uses the browser's own Web Speech API: a mic button dictates the answer,
+a ♪ button speaks any tutor message. Free, client-side, no dependency. Support is uneven, so the
+controls are hidden rather than shown broken when the browser lacks it. German maps to `de-DE`
+rather than `de-CH`, which exists but is far more thinly supported.
 
 ---
 
@@ -162,12 +187,13 @@ Content for the remaining categories gets written only after step 5 says where t
   picks the model per call.
 - Use **structured outputs** (`output_config: {format: {...}}`) for the finding schema rather
   than parsing JSON out of prose.
-- **Prompt caching: measured, does not currently apply.** The judge system prompt is stable and
-  carries `cache_control`, but at ~400 tokens it sits below the model's minimum cacheable prefix,
-  so live calls return `cache_read_input_tokens: 0`. Harmless, and it will start paying off on its
-  own if the prompt grows as more categories land. Not worth padding the prompt to force: measured
-  cost is ~$0.0025 per judged answer (861 in / 71 out on Sonnet 5), so caching would save
-  fractions of a cent.
+- **Prompt caching: measured, and it now applies to the detector.** The *judge* prompt is ~400
+  tokens, below the minimum cacheable prefix, so it returns `cache_read: 0` — harmless. The
+  *detector* prompt composes all seven categories' hints and comes to ~2,650 tokens, which clears
+  the minimum: measured `cache_creation: 2653` on the first call of a session and
+  `cache_read: 2653` on every one after. Measured costs on Sonnet 5: **~$0.0025 per judged drill
+  answer** (861 in / 71 out) and **~$0.0027 per analysed free-practice turn** once the prompt is
+  warm.
 - Set `thinking` deliberately: Sonnet 5 runs adaptive thinking when the parameter is omitted,
   which quietly adds output tokens to what should be a cheap call. `effort: "low"` is likely right.
 - **Storage:** `naturalness-<Language>` for findings, `naturalness-progress-<Language>` for

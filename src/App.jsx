@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 import * as nat from './naturalness/index.js';
+import * as det from './naturalness/detector.js';
+import * as voice from './voice.js';
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
 const LIGHT_VARS = {
@@ -226,18 +228,62 @@ export default function LanguagePracticeApp() {
   const [natFindings, setNatFindings] = useState([]);
   const [natProgress, setNatProgress] = useState({});
   const [natServed, setNatServed] = useState([]);
+  const [natItemShownAt, setNatItemShownAt] = useState(null);
+  const [natElapsed, setNatElapsed] = useState(0);
+  // The ride-along pass: on by default, but it costs a call per turn, so it is
+  // switchable and the choice is remembered.
+  const [natDetect, setNatDetect] = useState(() => {
+    try { return localStorage.getItem('lt_nat_detect') !== 'off'; } catch (e) { return true; }
+  });
+  const [isListening, setIsListening] = useState(false);
+  const stopListenRef = useRef(null);
 
   // Vocabulary view state
   const [vocabFilter, setVocabFilter] = useState('all');
   const [vocabSearch, setVocabSearch] = useState('');
 
   const conversationEndRef = useRef(null);
+  const selectedLanguageRef = useRef(selectedLanguage);
+  useEffect(() => { selectedLanguageRef.current = selectedLanguage; }, [selectedLanguage]);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     loadAllData();
   }, [selectedLanguage]);
+
+  // Countdown for time-pressured items (repair). Only runs when one is on screen.
+  useEffect(() => {
+    if (!natItemShownAt || !natItem?.timeLimitSec) { setNatElapsed(0); return undefined; }
+    const iv = setInterval(() => {
+      setNatElapsed(Math.floor((Date.now() - natItemShownAt) / 1000));
+    }, 500);
+    return () => clearInterval(iv);
+  }, [natItemShownAt, natItem]);
+
+  const toggleDetect = () => {
+    setNatDetect((on) => {
+      const next = !on;
+      try { localStorage.setItem('lt_nat_detect', next ? 'on' : 'off'); } catch (e) { /* ignore */ }
+      return next;
+    });
+  };
+
+  // ── Voice ───────────────────────────────────────────────────────────────────
+  const toggleListen = () => {
+    if (isListening) {
+      if (stopListenRef.current) stopListenRef.current();
+      setIsListening(false);
+      return;
+    }
+    const stop = voice.listen(selectedLanguage, {
+      onPartial: (t) => setUserInput(t),
+      onFinal: (t) => setUserInput(t),
+      onEnd: () => setIsListening(false),
+      onError: () => setIsListening(false),
+    });
+    if (stop) { stopListenRef.current = stop; setIsListening(true); }
+  };
 
   // Content modules load on demand so they never reach first paint.
   useEffect(() => {
@@ -372,7 +418,8 @@ export default function LanguagePracticeApp() {
     };
     const topicContext = topicFilter !== 'general' ? `Topic: ${topicFilter}.` : '';
     const modes = {
-      conversation: `Chat in ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Keep responses SHORT. After each exchange: ✓ corrections ✓ 1-2 alternatives ✓ 1-2 new words. Use emojis 👍`,
+      conversation: `Chat in ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Keep responses SHORT. After each exchange: ✓ corrections ✓ 1-2 new words. Use emojis 👍
+Do NOT suggest more natural phrasings or stylistic alternatives — a separate naturalness layer handles that, and duplicating it contradicts itself on screen. Correct actual errors only.`,
       grammar: `Grammar practice for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext}
 
 ${usedSentences.length > 0 ? `IMPORTANT: Do NOT repeat these English sentences you already gave:\n${usedSentences.slice(-10).join('\n')}\n\n` : ''}
@@ -521,6 +568,10 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     setUserInput('');
     setIsLoading(true);
 
+    // Ride-along naturalness pass, in parallel with the tutor so it costs no
+    // waiting. Deliberately not awaited.
+    void runDetector(userInput.trim());
+
     try {
       const apiMessages = updated.map((msg) => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content }));
       // Verb drill: every answered exercise moves the rotation on. Repeating the
@@ -575,11 +626,55 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     return out;
   };
 
+  /**
+   * The ride-along pass. Fires alongside the tutor reply rather than instead of
+   * it, so the learner never waits on it. Free text has no known opening, so
+   * these findings never count toward reach.
+   */
+  const runDetector = async (text) => {
+    if (!natDetect || !natModule) return;
+    if (!det.worthAnalysing(text)) return;
+    const lang = selectedLanguage;
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(det.buildDetectorRequest(text, natModule, lang)),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const body = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+      const parsed = det.parseDetection(body);
+      const found = det.toFindings(parsed, text);
+      if (!found.length) return;
+      if (lang !== selectedLanguageRef.current) return; // language switched mid-flight
+
+      setNatFindings((prev) => {
+        const next = [...prev, ...found];
+        try { localStorage.setItem(`naturalness-${lang}`, JSON.stringify(next.slice(-600))); } catch (e) { /* ignore */ }
+        return next;
+      });
+
+      const lines = [];
+      parsed.positives.forEach((pos) => {
+        lines.push(`✅ **${pos.learnerText}** — ${pos.note}`);
+      });
+      parsed.findings.forEach((f) => {
+        lines.push(`↑ You said: *${f.learnerText}*\n**${f.naturalText}**\n${f.explanation}`);
+      });
+      if (!lines.length) return;
+      setConversation((prev) => [...prev, { role: 'assistant', polish: true, content: `**Naturalness**\n\n${lines.join('\n\n')}` }]);
+    } catch (error) {
+      console.error('Detector error:', error);
+    }
+  };
+
   const natJudge = async () => {
     const item = natItem;
     const answer = userInput.trim();
     if (!item || !answer) return;
 
+    const elapsedSec = natItemShownAt ? (Date.now() - natItemShownAt) / 1000 : 0;
     const withAnswer = [...conversation, { role: 'user', content: answer }];
     setConversation(withAnswer);
     setUserInput('');
@@ -589,7 +684,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nat.buildJudgeRequest(item, answer)),
+        body: JSON.stringify(nat.buildJudgeRequest(item, answer, elapsedSec)),
       });
       if (!res.ok) throw new Error(`request failed (${res.status})`);
       const data = await res.json();
@@ -642,11 +737,16 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       if (item.confidence === 'review') {
         body += `\n\n⚠️ This one is genuinely contested among native speakers — worth checking against what you actually hear in Zurich.`;
       }
+      if (item.timeLimitSec) {
+        const over = elapsedSec > item.timeLimitSec;
+        body += `\n\n⏱ ${Math.round(elapsedSec)}s of ${item.timeLimitSec}s${over ? ' — over. Repair only counts if it is fast.' : ''}`;
+      }
 
       const msgs = [...withAnswer, { role: 'assistant', content: body }];
       const next = nat.pickNext(natItems, progress, natServed);
       if (next) {
         setNatItem(next);
+        setNatItemShownAt(Date.now());
         setNatServed((prevServed) => [...prevServed, next.id]);
         msgs.push({ role: 'assistant', content: natRender(next) });
       } else {
@@ -700,6 +800,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       const first = nat.pickNext(items, natProgress, []);
       setNatItem(first);
       setNatServed([first.id]);
+      setNatItemShownAt(Date.now());
       setConversation([{ role: 'assistant', content: natRender(first) }]);
       setIsLoading(false);
       return;
@@ -903,6 +1004,11 @@ Format:
 
   const labelStyle = { font: "500 11px 'IBM Plex Sans'", color: 'var(--muted)', marginBottom: 6 };
 
+  // Voice support is real but uneven (Chrome and Safari yes, Firefox no), so the
+  // controls are hidden rather than shown broken.
+  const micOn = voice.recognitionSupported();
+  const voiceOn = voice.synthesisSupported();
+
   return (
     <PasswordGate>
       <div
@@ -965,6 +1071,25 @@ Format:
                     <Select label="Mode" value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} options={modes.map((m) => ({ value: m.id, label: m.name }))} />
                   </div>
                   <Select label="Topic" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} options={topics.map((t) => ({ value: t, label: cap(t) }))} />
+
+                  {practiceMode !== 'naturalness' && nat.hasModule(selectedLanguage) && (
+                    <div
+                      onClick={toggleDetect}
+                      title="Analyses your answers for what is correct but not native. One extra call per turn."
+                      style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', padding: '9px 11px', borderRadius: 8, background: 'var(--field)', border: '1px solid var(--border)' }}
+                    >
+                      <span style={{
+                        width: 32, height: 18, borderRadius: 999, flex: '0 0 auto', position: 'relative',
+                        background: natDetect ? 'var(--accent)' : 'var(--border)', transition: 'background .2s',
+                      }}>
+                        <span style={{
+                          position: 'absolute', top: 2, left: natDetect ? 16 : 2, width: 14, height: 14,
+                          borderRadius: '50%', background: 'var(--panel)', transition: 'left .2s',
+                        }} />
+                      </span>
+                      <span style={{ font: "500 12px 'IBM Plex Sans'", color: natDetect ? 'var(--ink)' : 'var(--muted)' }}>Naturalness pass</span>
+                    </div>
+                  )}
 
                   {practiceMode === 'naturalness' && (
                     <div>
@@ -1088,6 +1213,11 @@ Format:
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 26px', borderBottom: '1px solid var(--border)', flex: '0 0 auto' }}>
                     <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)' }}>
                       {isDrilling ? 'Drilling · ' : ''}{modeName} · {proficiencyLevel}{topicFilter !== 'general' ? ` · ${cap(topicFilter)}` : ''}
+                      {natItem?.timeLimitSec && practiceMode === 'naturalness' && (
+                        <span style={{ marginLeft: 10, color: natElapsed > natItem.timeLimitSec ? 'var(--accent)' : 'var(--muted)' }}>
+                          ⏱ {Math.max(0, natItem.timeLimitSec - natElapsed)}s
+                        </span>
+                      )}
                     </div>
                     {sessionStartTime && <div style={{ font: "500 10px/1 'IBM Plex Mono'", color: 'var(--muted)' }}>● {liveTime}</div>}
                   </div>
@@ -1107,8 +1237,27 @@ Format:
                       {conversation.map((msg, idx) => (
                         msg.role === 'assistant' ? (
                           <div key={idx} style={{ display: 'flex', gap: 12 }}>
-                            <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>T</div>
-                            <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '4px 14px 14px 14px', padding: '14px 17px', fontSize: 14.5, lineHeight: 1.6, color: 'var(--soft)', maxWidth: 620 }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                            <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: msg.polish ? 'var(--green)' : 'var(--accent)', color: msg.polish ? 'var(--panel)' : 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>{msg.polish ? '↑' : 'T'}</div>
+                            <div style={{ position: 'relative', maxWidth: 620 }}>
+                              <div
+                                style={{
+                                  background: msg.polish ? 'var(--green-bg)' : 'var(--panel)',
+                                  border: `1px solid ${msg.polish ? 'var(--green-border)' : 'var(--border)'}`,
+                                  borderRadius: '4px 14px 14px 14px', padding: '14px 17px', fontSize: 14.5,
+                                  lineHeight: 1.6, color: msg.polish ? 'var(--green-ink)' : 'var(--soft)',
+                                }}
+                                dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                              />
+                              {voiceOn && (
+                                <button
+                                  onClick={() => voice.speak(msg.content, selectedLanguage)}
+                                  title="Hear it"
+                                  style={{ position: 'absolute', top: 6, right: -34, width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--field)', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}
+                                >
+                                  ♪
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           <div key={idx} style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1140,6 +1289,21 @@ Format:
                       disabled={conversation.length === 0 || isLoading}
                       style={{ flex: 1, background: 'var(--input)', border: '1.5px solid var(--border)', borderRadius: 9, padding: '14px 16px', minHeight: 50, color: 'var(--ink)', fontSize: 15, fontFamily: "'Spectral',serif", fontStyle: 'italic', outline: 'none' }}
                     />
+                    {micOn && (
+                      <button
+                        onClick={toggleListen}
+                        disabled={conversation.length === 0 || isLoading}
+                        title={isListening ? 'Stop dictating' : 'Answer out loud'}
+                        style={{
+                          flex: '0 0 auto', width: 50, minHeight: 50, borderRadius: 9, cursor: 'pointer',
+                          border: `1.5px solid ${isListening ? 'var(--accent)' : 'var(--border)'}`,
+                          background: isListening ? 'var(--accent-bg)' : 'var(--field)',
+                          color: isListening ? 'var(--accent)' : 'var(--muted)', fontSize: 17,
+                        }}
+                      >
+                        {isListening ? '◉' : '🎙'}
+                      </button>
+                    )}
                     <button
                       onClick={handleSendMessage}
                       disabled={!userInput.trim() || conversation.length === 0 || isLoading}

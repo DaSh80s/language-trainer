@@ -87,6 +87,20 @@ export function present(item) {
         extra: null,
         inputHint: 'What it conveys',
       };
+    case 'react':
+      return {
+        instruction: 'React to this in German — one to three words.',
+        stimulus: p.line,
+        extra: p.situation ? `[ ${p.situation} ]` : null,
+        inputHint: 'Your reaction',
+      };
+    case 'soften':
+      return {
+        instruction: 'Say the same thing, but pitched as described.',
+        stimulus: p.blunt,
+        extra: `[ ${p.level} ]`,
+        inputHint: 'Your version',
+      };
     default:
       return { instruction: 'Answer:', stimulus: item.target, extra: null, inputHint: 'Answer' };
   }
@@ -136,14 +150,18 @@ const JUDGE_SCHEMA = {
  * Build the request body for judging one answer.
  * Posted to /api/chat, which forwards it to the Messages API untouched.
  */
-export function buildJudgeRequest(item, answer) {
+export function buildJudgeRequest(item, answer, elapsedSec) {
   const p = present(item);
+  const overTime = item.timeLimitSec && elapsedSec > item.timeLimitSec;
   const context = [
     `Format: ${item.format}`,
     `Target feature: ${item.particle}`,
     `What the learner was shown: ${p.stimulus}${p.extra ? `  ${p.extra}` : ''}`,
     `Expected natural answer: ${item.target}`,
     item.note ? `Teaching note: ${item.note}` : null,
+    item.timeLimitSec
+      ? `This item is time-pressured (${item.timeLimitSec}s limit). They answered in ${Math.round(elapsedSec)}s${overTime ? ' — over the limit' : ''}. Judge the German, not the clock, but a fluent-sounding rescue matters more here than a perfectly polished one.`
+      : null,
     '',
     `The learner answered: ${answer}`,
   ].filter(Boolean).join('\n');
