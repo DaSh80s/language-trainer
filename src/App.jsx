@@ -699,8 +699,17 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     if (control === 'hint') {
       setUserInput('');
       const level = natHintLevel + 1;
+      const text = nat.hintFor(item, level);
+      // Some formats only have one level of nudge. Repeating it verbatim looks
+      // broken, so say plainly that there is no more.
+      const exhausted = level > 1 && text === nat.hintFor(item, level - 1);
       setNatHintLevel(level);
-      setConversation([...conversation, { role: 'assistant', content: `💡 ${nat.hintFor(item, level)}` }]);
+      setConversation([...conversation, {
+        role: 'assistant',
+        content: exhausted
+          ? '💡 That is as much of a nudge as there is. Have a go, or type **skip**.'
+          : `💡 ${text}`,
+      }]);
       return;
     }
 
