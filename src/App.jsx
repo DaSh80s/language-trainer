@@ -833,6 +833,26 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
 
   const handleStartPractice = async () => {
     if (!practiceMode) return;
+
+    // Naturalness needs content before anything is recorded — otherwise a
+    // dead-end start still bumps the streak and logs a phantom session.
+    let natFirstItems = null;
+    let natMod = natModule;
+    if (practiceMode === 'naturalness') {
+      natMod = natModule || (await nat.loadModule(selectedLanguage));
+      natFirstItems = nat.itemsFor(natMod, natCategories);
+      if (!natFirstItems.length) {
+        const noModule = !nat.hasModule(selectedLanguage);
+        setConversation([{
+          role: 'assistant',
+          content: noModule
+            ? `**No content for ${selectedLanguage} yet.**\n\nGerman is the only naturalness module built so far. Switch the language to German, or use one of the other practice modes.`
+            : '**No categories selected.**\n\nPick at least one category on the left — every one of them has content.',
+        }]);
+        return;
+      }
+    }
+
     setConversation([]);
     setIsLoading(true);
     setSessionStartTime(Date.now());
@@ -855,17 +875,8 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     savePracticeHistory(updatedHistory);
 
     if (practiceMode === 'naturalness') {
-      const mod = natModule || (await nat.loadModule(selectedLanguage));
-      if (mod && mod !== natModule) setNatModule(mod);
-      const items = nat.itemsFor(mod, natCategories);
-      if (!items.length) {
-        setConversation([{
-          role: 'assistant',
-          content: `**Nothing to drill yet.**\n\nThere is no naturalness content for ${selectedLanguage}. German is the only module built so far — switch language, or pick a category that has content.`,
-        }]);
-        setIsLoading(false);
-        return;
-      }
+      if (natMod && natMod !== natModule) setNatModule(natMod);
+      const items = natFirstItems;
       const first = nat.pickNext(items, natProgress, []);
       setNatItem(first);
       setNatServed([first.id]);
@@ -1265,7 +1276,7 @@ Format:
 
                   <button
                     onClick={handleStartPractice}
-                    disabled={!practiceMode || isLoading}
+                    disabled={!practiceMode || isLoading || (practiceMode === 'naturalness' && nat.hasModule(selectedLanguage) && natItems.length === 0)}
                     style={{ width: '100%', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 14px 'IBM Plex Sans'", padding: '12px', borderRadius: 8, cursor: 'pointer', boxShadow: '0 4px 14px var(--accent-glow)' }}
                   >
                     {isLoading && conversation.length === 0 ? 'Starting…' : conversation.length > 0 ? 'Restart session' : 'Start session'}
