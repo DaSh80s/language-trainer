@@ -928,6 +928,39 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       savePracticeHistory(updated);
     }
 
+    // Naturalness sessions get a summary computed from what actually happened,
+    // not a generic X/6.00 German grade. That grade would be meaningless for a
+    // drill transcript, would compete with the naturalness score, and costs a
+    // model call to produce. This is free and says more.
+    if (practiceMode === 'naturalness') {
+      const mine = natFindings.filter((f) => new Date(f.timestamp).getTime() >= sessionStartTime);
+      const probes = mine.filter((f) => f.probedReach);
+      const taken = probes.filter((f) => f.reached).length;
+      const landed = mine.filter((f) => f.reached && f.landed).length;
+      const attempted = mine.filter((f) => f.reached).length;
+      const byCat = {};
+      mine.forEach((f) => {
+        const label = nat.CATEGORY_BY_ID[f.categoryId]?.label || f.categoryId;
+        byCat[label] = byCat[label] || { n: 0, ok: 0 };
+        byCat[label].n += 1;
+        if (f.landed) byCat[label].ok += 1;
+      });
+      const lines = Object.entries(byCat).map(([k, v]) => `• ${k} — ${v.ok}/${v.n} landed`);
+      const body = mine.length
+        ? [
+            `**Session summary** · ${minutes} min`,
+            '',
+            probes.length ? `**${taken}/${probes.length} openings taken.** That is the number worth watching.` : null,
+            attempted ? `${landed}/${attempted} of your attempts landed naturally.` : null,
+            '',
+            ...lines,
+          ].filter((l) => l !== null).join('\n')
+        : `**Session summary** · ${minutes} min\n\nNothing answered this time.`;
+      setConversation([...conversation, { role: 'assistant', content: body }]);
+      setSessionStartTime(null);
+      return;
+    }
+
     if (conversation.length > 2) {
       setIsLoading(true);
       try {
