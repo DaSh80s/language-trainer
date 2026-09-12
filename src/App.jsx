@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
+import * as nat from './naturalness/index.js';
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
 const LIGHT_VARS = {
@@ -217,6 +218,15 @@ export default function LanguagePracticeApp() {
   const [verbInput, setVerbInput] = useState('');
   const [verbCursor, setVerbCursor] = useState(0);
 
+  // Naturalness layer state. Findings are kept separate from the grammar error
+  // store at the data layer, even though both surface near each other in the UI.
+  const [natModule, setNatModule] = useState(null);
+  const [natCategories, setNatCategories] = useState(['particles']);
+  const [natItem, setNatItem] = useState(null);
+  const [natFindings, setNatFindings] = useState([]);
+  const [natProgress, setNatProgress] = useState({});
+  const [natServed, setNatServed] = useState([]);
+
   // Vocabulary view state
   const [vocabFilter, setVocabFilter] = useState('all');
   const [vocabSearch, setVocabSearch] = useState('');
@@ -227,6 +237,13 @@ export default function LanguagePracticeApp() {
 
   useEffect(() => {
     loadAllData();
+  }, [selectedLanguage]);
+
+  // Content modules load on demand so they never reach first paint.
+  useEffect(() => {
+    let live = true;
+    nat.loadModule(selectedLanguage).then((m) => { if (live) setNatModule(m); });
+    return () => { live = false; };
   }, [selectedLanguage]);
 
   const toggleTheme = () => {
@@ -293,6 +310,13 @@ export default function LanguagePracticeApp() {
       const verbs = localStorage.getItem(`verbs-${selectedLanguage}`);
       setVerbInput(verbs || '');
       setVerbCursor(0);
+
+      const natF = localStorage.getItem(`naturalness-${selectedLanguage}`);
+      setNatFindings(natF ? JSON.parse(natF) : []);
+      const natP = localStorage.getItem(`naturalness-progress-${selectedLanguage}`);
+      setNatProgress(natP ? JSON.parse(natP) : {});
+      setNatItem(null);
+      setNatServed([]);
 
       const ach = localStorage.getItem('achievements');
       if (ach) setAchievements(JSON.parse(ach));
@@ -429,6 +453,13 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
   const handleSendMessage = async () => {
     if (!userInput.trim() || !practiceMode) return;
 
+    // Naturalness drills are item-driven, not chat-driven: the answer is judged
+    // against the item rather than continued as a conversation.
+    if (practiceMode === 'naturalness') {
+      await natJudge();
+      return;
+    }
+
     const input = userInput.trim().toLowerCase();
     if (input === 'y' || input === 'yes') {
       setIsDrilling(true);
@@ -525,6 +556,112 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     }
   };
 
+  // ── Naturalness layer ───────────────────────────────────────────────────────
+  const natItems = React.useMemo(() => nat.itemsFor(natModule, natCategories), [natModule, natCategories]);
+  const natBuilt = React.useMemo(() => nat.builtCategories(natModule), [natModule]);
+
+  const saveNatFindings = (list) => {
+    try { localStorage.setItem(`naturalness-${selectedLanguage}`, JSON.stringify(list.slice(-600))); } catch (e) { /* ignore */ }
+  };
+  const saveNatProgress = (map) => {
+    try { localStorage.setItem(`naturalness-progress-${selectedLanguage}`, JSON.stringify(map)); } catch (e) { /* ignore */ }
+  };
+
+  /** Render a drill item into a chat message. Built locally — no API call. */
+  const natRender = (item) => {
+    const p = nat.present(item);
+    let out = `**${p.instruction}**\n\n${p.stimulus}`;
+    if (p.extra) out += `\n\n${p.extra}`;
+    return out;
+  };
+
+  const natJudge = async () => {
+    const item = natItem;
+    const answer = userInput.trim();
+    if (!item || !answer) return;
+
+    const withAnswer = [...conversation, { role: 'user', content: answer }];
+    setConversation(withAnswer);
+    setUserInput('');
+    setIsLoading(true);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nat.buildJudgeRequest(item, answer)),
+      });
+      if (!res.ok) throw new Error(`request failed (${res.status})`);
+      const data = await res.json();
+      const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+      const j = nat.parseJudgement(text);
+
+      const probed = nat.probesReach(item);
+      const finding = {
+        id: `${item.id}-${Date.now()}`,
+        categoryId: item.categoryId,
+        itemId: item.id,
+        particle: item.particle,
+        probedReach: probed,
+        reached: probed ? j.reached : true,
+        landed: j.landed,
+        severity: j.severity,
+        learnerText: answer,
+        naturalText: j.naturalText,
+        explanation: j.explanation,
+        timestamp: new Date().toISOString(),
+      };
+      const findings = [...natFindings, finding];
+      setNatFindings(findings);
+      saveNatFindings(findings);
+
+      const prev = natProgress[item.id] || { seen: 0, missed: 0 };
+      const progress = {
+        ...natProgress,
+        [item.id]: {
+          seen: prev.seen + 1,
+          missed: prev.missed + (j.landed ? 0 : 1),
+          lastSeen: new Date().toISOString(),
+        },
+      };
+      setNatProgress(progress);
+      saveNatProgress(progress);
+
+      const missedOpening = probed && !j.reached;
+      const mark = j.landed ? '✅' : missedOpening ? '⚪' : '❌';
+      const head = j.landed
+        ? 'Landed.'
+        : missedOpening
+          ? `The opening was there for ${item.particle} and you did not take it.`
+          : 'Not quite.';
+
+      let body = `${mark} **${head}**\n\n`;
+      if (j.naturalText) body += `**${j.naturalText}**\n\n`;
+      if (j.explanation) body += `${j.explanation}\n`;
+      if (item.note) body += `\n💡 ${item.note}`;
+      if (item.confidence === 'review') {
+        body += `\n\n⚠️ This one is genuinely contested among native speakers — worth checking against what you actually hear in Zurich.`;
+      }
+
+      const msgs = [...withAnswer, { role: 'assistant', content: body }];
+      const next = nat.pickNext(natItems, progress, natServed);
+      if (next) {
+        setNatItem(next);
+        setNatServed((prevServed) => [...prevServed, next.id]);
+        msgs.push({ role: 'assistant', content: natRender(next) });
+      } else {
+        setNatItem(null);
+        msgs.push({ role: 'assistant', content: 'That is every item in this selection. End the session to save it.' });
+      }
+      setConversation(msgs);
+    } catch (error) {
+      console.error('Naturalness judge error:', error);
+      setConversation([...withAnswer, { role: 'assistant', content: `Could not judge that answer — ${error.message}` }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleStartPractice = async () => {
     if (!practiceMode) return;
     setConversation([]);
@@ -547,6 +684,26 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     const updatedHistory = [newSession, ...practiceHistory].slice(0, 100);
     setPracticeHistory(updatedHistory);
     savePracticeHistory(updatedHistory);
+
+    if (practiceMode === 'naturalness') {
+      const mod = natModule || (await nat.loadModule(selectedLanguage));
+      if (mod && mod !== natModule) setNatModule(mod);
+      const items = nat.itemsFor(mod, natCategories);
+      if (!items.length) {
+        setConversation([{
+          role: 'assistant',
+          content: `**Nothing to drill yet.**\n\nThere is no naturalness content for ${selectedLanguage}. German is the only module built so far — switch language, or pick a category that has content.`,
+        }]);
+        setIsLoading(false);
+        return;
+      }
+      const first = nat.pickNext(items, natProgress, []);
+      setNatItem(first);
+      setNatServed([first.id]);
+      setConversation([{ role: 'assistant', content: natRender(first) }]);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const prompts = {
@@ -702,6 +859,7 @@ Format:
     { id: 'conversation', name: 'Conversation' },
     { id: 'grammar', name: 'Grammar' },
     { id: 'verbs', name: 'Verb Drill' },
+    { id: 'naturalness', name: 'Naturalness' },
     { id: 'vocabulary', name: 'Vocabulary' },
     { id: 'translation', name: 'Translation' },
     { id: 'articles', name: 'Article Gender' },
@@ -807,6 +965,49 @@ Format:
                     <Select label="Mode" value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} options={modes.map((m) => ({ value: m.id, label: m.name }))} />
                   </div>
                   <Select label="Topic" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} options={topics.map((t) => ({ value: t, label: cap(t) }))} />
+
+                  {practiceMode === 'naturalness' && (
+                    <div>
+                      <div style={labelStyle}>Categories</div>
+                      {!nat.hasModule(selectedLanguage) ? (
+                        <div style={{ font: "400 11.5px 'IBM Plex Sans'", color: 'var(--faint)' }}>
+                          No content for {selectedLanguage} yet. German is the only module built so far.
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                            {nat.CATEGORIES.map((c) => {
+                              const built = natBuilt.includes(c.id);
+                              const on = built && natCategories.includes(c.id);
+                              return (
+                                <span
+                                  key={c.id}
+                                  title={built ? c.blurb : 'Not built yet'}
+                                  onClick={() => {
+                                    if (!built) return;
+                                    setNatCategories((prev) => (prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id]));
+                                  }}
+                                  style={{
+                                    borderRadius: 999, padding: '3px 9px', font: "500 11.5px 'IBM Plex Sans'",
+                                    cursor: built ? 'pointer' : 'default',
+                                    background: on ? 'var(--accent-bg)' : 'var(--field)',
+                                    border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                                    color: built ? (on ? 'var(--accent)' : 'var(--soft)') : 'var(--faint)',
+                                    opacity: built ? 1 : 0.45,
+                                  }}
+                                >
+                                  {c.label}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 8 }}>
+                            {natItems.length} item{natItems.length === 1 ? '' : 's'} ready · {natBuilt.length} of {nat.CATEGORIES.length} categories built
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {practiceMode === 'verbs' && (
                     <div>
@@ -1118,6 +1319,62 @@ Format:
               </div>
 
               {/* data backup / restore */}
+              {/* Naturalness — deliberately its own section, not folded into accuracy.
+                  Reach leads: a score that only counts mistakes rewards avoidance. */}
+              {natFindings.length > 0 && (() => {
+                const rows = nat.scoring.byCategory(natFindings);
+                const all = nat.scoring.overall(natFindings);
+                return (
+                  <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px var(--shadow)', padding: '22px 24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                      <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>Naturalness</div>
+                      <div style={{ font: "400 11.5px 'IBM Plex Sans'", color: 'var(--faint)' }}>separate from grammar accuracy</div>
+                    </div>
+                    <div style={{ font: "400 12px 'IBM Plex Sans'", color: 'var(--muted)', marginBottom: 18 }}>
+                      Reach is the number that matters: of the openings that were there, how many you took.
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 34, marginBottom: 22, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 34, lineHeight: 1, color: 'var(--accent)' }}>
+                          {all.reachPct === null ? '—' : `${all.reachPct}%`}
+                        </div>
+                        <div style={{ font: "500 11px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 8 }}>Openings taken</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 34, lineHeight: 1, color: 'var(--ink)' }}>
+                          {all.hitScore === null ? '—' : all.hitScore}
+                        </div>
+                        <div style={{ font: "500 11px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 8 }}>Hit rate when you tried</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 34, lineHeight: 1, color: 'var(--ink)' }}>{natFindings.length}</div>
+                        <div style={{ font: "500 11px 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 8 }}>Answers logged</div>
+                      </div>
+                    </div>
+
+                    {rows.sort((a, b) => (a.reach.pct ?? 101) - (b.reach.pct ?? 101)).map((r) => (
+                      <div key={r.categoryId} style={{ padding: '11px 0', borderTop: '1px solid var(--border-2)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 7 }}>
+                          <span style={{ font: "600 13.5px 'IBM Plex Sans'", color: 'var(--ink)' }}>{r.label}</span>
+                          <span style={{ font: "400 11.5px 'IBM Plex Mono'", color: 'var(--faint)' }}>
+                            {r.reach.openings > 0 ? `${r.reach.taken}/${r.reach.openings} openings` : `${r.total} answers`}
+                            {' · '}
+                            {r.hit.enough ? `hit ${r.hit.score}` : `hit: ${r.hit.observations}/${nat.scoring.MIN_OBSERVATIONS} needed`}
+                          </span>
+                        </div>
+                        <div style={{ height: 7, borderRadius: 999, background: 'var(--field)', overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${r.reach.pct ?? 0}%`, height: '100%', borderRadius: 999,
+                            background: 'var(--accent)', transition: 'width .3s',
+                          }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
               <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px var(--shadow)', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
                 <div>
                   <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>Data backup</div>

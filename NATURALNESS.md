@@ -1,6 +1,7 @@
 # Naturalness Layer — build plan
 
-Status: **planned, not started** (2026-09-12)
+Status: **steps 1-4 built and live** (2026-09-12). Particles drilling works end to end; the
+remaining categories are declared but empty, and the ride-along detector and voice are still to come.
 
 A second pillar alongside the grammar drilling, targeting what separates *correct* German
 from *native-sounding* German. This plan is a revision of the original spec, narrowed after
@@ -161,8 +162,12 @@ Content for the remaining categories gets written only after step 5 says where t
   picks the model per call.
 - Use **structured outputs** (`output_config: {format: {...}}`) for the finding schema rather
   than parsing JSON out of prose.
-- **Cache the system prompt** — category definitions and hints are byte-identical every call,
-  and the 5-minute default TTL fits a practice session almost exactly (~90% off input on repeats).
+- **Prompt caching: measured, does not currently apply.** The judge system prompt is stable and
+  carries `cache_control`, but at ~400 tokens it sits below the model's minimum cacheable prefix,
+  so live calls return `cache_read_input_tokens: 0`. Harmless, and it will start paying off on its
+  own if the prompt grows as more categories land. Not worth padding the prompt to force: measured
+  cost is ~$0.0025 per judged answer (861 in / 71 out on Sonnet 5), so caching would save
+  fractions of a cent.
 - Set `thinking` deliberately: Sonnet 5 runs adaptive thinking when the parameter is omitted,
   which quietly adds output tokens to what should be a cheap call. `effort: "low"` is likely right.
 - **Storage:** `naturalness-<Language>` for findings, `naturalness-progress-<Language>` for
