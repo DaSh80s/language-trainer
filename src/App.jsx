@@ -770,7 +770,13 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       setNatHintLevel(0);
       setConversation(natAdvance(progress, [
         ...conversation,
-        { role: 'assistant', content: `⏭ Skipped. It wanted: **${item.target}**${probed ? '\n\nSkips count as an opening not taken — otherwise the score could be improved just by avoiding the hard ones.' : ''}` },
+        {
+          role: 'assistant',
+          content: `⏭ Skipped. It wanted: **${item.target}**${probed ? '\n\nSkips count as an opening not taken — otherwise the score could be improved just by avoiding the hard ones.' : ''}`,
+          // Hearing the answer you could not produce is the most useful moment
+          // for the speak button, so long as the answer is actually German.
+          speak: ['minimalPair', 'reverseGloss'].includes(item.format) ? null : item.target,
+        },
       ]));
       return;
     }
