@@ -185,7 +185,9 @@ Fields:
 - landed: if reached, did it come out naturally and in the right slot? False if reached is false.
 - severity: how foreign the answer sounds. "none" if it is fine.
 - naturalText: the natural German. If the learner's answer was already natural, repeat theirs.
-- explanation: one or two sentences, English, plain language.`;
+- explanation: one or two sentences, English, plain language.
+- meaning: what the target word or device actually MEANS and does, in one plain-English line. Fill this in whenever the learner failed to produce it (reached false, or landed false) - they clearly do not know the word yet, and being corrected without being taught is useless. Empty string when they got it right.
+- example: one further example sentence using the target, in German, then an em dash, then its English translation. Same rule - fill it in when they missed it, empty string otherwise. Use a DIFFERENT sentence from the expected answer.`;
 
 const JUDGE_SCHEMA = {
   type: 'object',
@@ -195,8 +197,10 @@ const JUDGE_SCHEMA = {
     severity: { type: 'string', enum: ['none', 'nitpick', 'noticeable', 'clearly-foreign'] },
     naturalText: { type: 'string' },
     explanation: { type: 'string' },
+    meaning: { type: 'string' },
+    example: { type: 'string' },
   },
-  required: ['reached', 'landed', 'severity', 'naturalText', 'explanation'],
+  required: ['reached', 'landed', 'severity', 'naturalText', 'explanation', 'meaning', 'example'],
   additionalProperties: false,
 };
 
@@ -223,7 +227,7 @@ export function buildJudgeRequest(item, answer, elapsedSec) {
 
   return {
     model: JUDGE_MODEL,
-    max_tokens: 400,
+    max_tokens: 600,
     // Sonnet 5 runs adaptive thinking when the parameter is omitted, which would
     // quietly add output tokens to what should be a cheap classification.
     thinking: { type: 'disabled' },
@@ -258,6 +262,8 @@ export function parseJudgement(text) {
       severity: null,
       naturalText: '',
       explanation: String(text || '').slice(0, 400) || 'Could not read the response.',
+      meaning: '',
+      example: '',
     };
   }
   const sev = raw.severity === 'none' ? null : raw.severity || null;
@@ -268,5 +274,7 @@ export function parseJudgement(text) {
     severity: sev,
     naturalText: String(raw.naturalText || ''),
     explanation: String(raw.explanation || ''),
+    meaning: String(raw.meaning || ''),
+    example: String(raw.example || ''),
   };
 }

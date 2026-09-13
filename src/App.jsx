@@ -671,6 +671,44 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     }
   };
 
+  /**
+   * "You missed X — here is what X actually means, with an example."
+   *
+   * Being corrected without being taught is useless: if the drill wanted `wohl`
+   * and it never came, the word itself needs explaining, not just the sentence.
+   *
+   * The module's own reference is preferred over anything generated, because it
+   * was written deliberately and carries its caveats (halt vs eben). Categories
+   * that tag every item with a generic feature name have nothing to key on, so
+   * the judge's gloss is used there instead.
+   */
+  const natTeachBlock = (item, judged) => {
+    const ref = nat.referenceFor(natModule, item.categoryId, item.particle);
+    // Only trust a curated example when a curated GLOSS exists for the same
+    // feature. Without that, categories tagging every item with a generic name
+    // ('collocation') would match an unrelated item and present it as "another
+    // example" of the thing just missed.
+    const eg = ref ? nat.exampleFor(natModule, item.categoryId, item.particle, item.id) : null;
+    const lines = [];
+
+    if (ref) {
+      lines.push(`📖 **${ref.particle}** — ${ref.sense}`);
+      if (ref.note) lines.push(ref.note);
+    } else if (judged?.meaning) {
+      lines.push(`📖 **${item.particle}** — ${judged.meaning}`);
+    }
+
+    if (eg) {
+      lines.push(`Another example: **${eg.german}** — "${eg.english}"`);
+    } else if (judged?.example) {
+      lines.push(`Another example: ${judged.example}`);
+    } else if (ref?.pair?.with) {
+      lines.push(`Another example: **${ref.pair.with}**`);
+    }
+
+    return lines.length ? `\n\n${lines.join('\n')}` : '';
+  };
+
   /** Render a drill item into a chat message. Built locally — no API call. */
   const natRender = (item) => {
     const p = nat.present(item);
@@ -803,7 +841,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
         ...conversation,
         {
           role: 'assistant',
-          content: `⏭ Skipped. It wanted: **${item.target}**${probed ? '\n\nSkips count as an opening not taken — otherwise the score could be improved just by avoiding the hard ones.' : ''}`,
+          content: `⏭ Skipped. It wanted: **${item.target}**${natTeachBlock(item, null)}${probed ? '\n\nSkips count as an opening not taken — otherwise the score could be improved just by avoiding the hard ones.' : ''}`,
           // Hearing the answer you could not produce is the most useful moment
           // for the speak button, so long as the answer is actually German.
           speak: ['minimalPair', 'reverseGloss'].includes(item.format) ? null : item.target,
@@ -873,6 +911,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       if (j.naturalText) body += `**${j.naturalText}**\n\n`;
       if (j.explanation) body += `${j.explanation}\n`;
       if (item.note) body += `\n💡 ${item.note}`;
+      if (!j.landed) body += natTeachBlock(item, j);
       if (item.confidence === 'review') {
         body += `\n\n⚠️ This one is genuinely contested among native speakers — worth checking against what you actually hear in Zurich.`;
       }

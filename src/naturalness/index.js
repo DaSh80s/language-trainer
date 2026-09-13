@@ -55,3 +55,41 @@ export function itemsFor(mod, categoryIds) {
     return c && c.enabled ? c.items.map((it) => ({ ...it, categoryId: id })) : [];
   });
 }
+
+/**
+ * What a target feature means, from the module's own curated reference.
+ *
+ * Preferred over asking the model for a gloss: these were written and checked
+ * deliberately, and the contested ones (halt vs eben) carry their caveats.
+ * Returns null where the category has no per-word reference — collocations and
+ * interference tag every item with a generic feature name, so there is nothing
+ * to key on and the judge supplies the gloss instead.
+ */
+export function referenceFor(mod, categoryId, particle) {
+  if (!mod || !particle) return null;
+  const cat = mod.categories?.[categoryId];
+  if (!cat?.reference) return null;
+  const key = String(particle).trim().toLowerCase();
+  return cat.reference.find((r) => String(r.particle).trim().toLowerCase() === key) || null;
+}
+
+/**
+ * Another worked example of the same feature, taken from a different drill item.
+ *
+ * trapTranslation items carry the English they were built from, so they give a
+ * German sentence with its gloss for free — no generation, no invented example.
+ */
+export function exampleFor(mod, categoryId, particle, excludeItemId) {
+  if (!mod || !particle) return null;
+  const cat = mod.categories?.[categoryId];
+  if (!cat?.items) return null;
+  const key = String(particle).trim().toLowerCase();
+  const hit = cat.items.find((it) => (
+    it.id !== excludeItemId
+    && String(it.particle).trim().toLowerCase() === key
+    && it.format === 'trapTranslation'
+    && it.prompt?.english
+    && it.target
+  ));
+  return hit ? { german: hit.target, english: hit.prompt.english } : null;
+}
