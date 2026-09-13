@@ -1397,7 +1397,11 @@ Format:
                 {conversation.length > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 26px', borderBottom: '1px solid var(--border)', flex: '0 0 auto' }}>
                     <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)' }}>
-                      {isDrilling ? 'Drilling · ' : ''}{modeName} · {proficiencyLevel}{topicFilter !== 'general' ? ` · ${cap(topicFilter)}` : ''}
+                      {isDrilling ? 'Drilling · ' : ''}{modeName}
+                      {/* Level and topic are hidden in the naturalness modes because they
+                          do not apply, so printing them here would contradict that. */}
+                      {!isNat && ` · ${proficiencyLevel}`}
+                      {!isNat && topicFilter !== 'general' ? ` · ${cap(topicFilter)}` : ''}
                       {natItem?.timeLimitSec && isNat && (
                         <span style={{ marginLeft: 10, color: natElapsed > natItem.timeLimitSec ? 'var(--accent)' : 'var(--muted)' }}>
                           ⏱ {Math.max(0, natItem.timeLimitSec - natElapsed)}s
