@@ -27,6 +27,13 @@ const ARTICLES = new Set([
   'il', 'lo', 'gli', 'de', 'het', 'ett', 'en',
 ]);
 
+/**
+ * Naturalness areas are practice modes in their own right, identified by a
+ * 'nat:' prefix — 'nat:particles', or 'nat:mixed' for all of them. They sit in
+ * the same dropdown as Grammar because that is how a mode gets chosen here.
+ */
+const isNatMode = (m) => typeof m === 'string' && m.startsWith('nat:');
+
 function splitArticle(word) {
   if (!word) return [null, word || ''];
   const parts = String(word).trim().split(/\s+/);
@@ -102,7 +109,13 @@ function Select({ label, value, onChange, options }) {
             fontFamily: "'IBM Plex Sans',sans-serif", cursor: 'pointer',
           }}
         >
-          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {options.map((o) => (o.group ? (
+            <optgroup key={o.group} label={o.group}>
+              {o.options.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+            </optgroup>
+          ) : (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          )))}
         </select>
         <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--faint)', pointerEvents: 'none', fontSize: 12 }}>⌄</span>
       </div>
@@ -194,6 +207,7 @@ export default function LanguagePracticeApp() {
   const [selectedLanguage, setSelectedLanguage] = useState('German');
   const [proficiencyLevel, setProficiencyLevel] = useState('C2');
   const [practiceMode, setPracticeMode] = useState('grammar');
+  const isNat = isNatMode(practiceMode);
   const [topicFilter, setTopicFilter] = useState('general');
   const [userInput, setUserInput] = useState('');
   const [conversation, setConversation] = useState([]);
@@ -223,7 +237,8 @@ export default function LanguagePracticeApp() {
   // Naturalness layer state. Findings are kept separate from the grammar error
   // store at the data layer, even though both surface near each other in the UI.
   const [natModule, setNatModule] = useState(null);
-  const [natCategories, setNatCategories] = useState(['particles']);
+  // The naturalness area is chosen in the Mode dropdown ('nat:particles'), so
+  // there is no separate category state to keep in sync.
   const [natItem, setNatItem] = useState(null);
   const [natFindings, setNatFindings] = useState([]);
   const [natProgress, setNatProgress] = useState({});
@@ -507,7 +522,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
 
     // Naturalness drills are item-driven, not chat-driven: the answer is judged
     // against the item rather than continued as a conversation.
-    if (practiceMode === 'naturalness') {
+    if (isNat) {
       await natJudge();
       return;
     }
@@ -613,8 +628,22 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
   };
 
   // ── Naturalness layer ───────────────────────────────────────────────────────
-  const natItems = React.useMemo(() => nat.itemsFor(natModule, natCategories), [natModule, natCategories]);
   const natBuilt = React.useMemo(() => nat.builtCategories(natModule), [natModule]);
+  // Each naturalness area is its own practice mode, picked in the same dropdown
+  // as Grammar. 'nat:mixed' draws from every built area.
+  const natCategories = React.useMemo(() => {
+    if (!isNatMode(practiceMode)) return [];
+    const c = practiceMode.slice(4);
+    return c === 'mixed' ? natBuilt : [c];
+  }, [practiceMode, natBuilt]);
+  const natItems = React.useMemo(() => nat.itemsFor(natModule, natCategories), [natModule, natCategories]);
+
+  // Switching to a language with no naturalness module would leave the mode
+  // dropdown pointing at an option that no longer exists.
+  useEffect(() => {
+    if (isNat && natModule && !natBuilt.length) setPracticeMode('grammar');
+  }, [isNat, natModule, natBuilt]);
+
 
   const saveNatFindings = (list) => {
     try { localStorage.setItem(`naturalness-${selectedLanguage}`, JSON.stringify(list.slice(-600))); } catch (e) { /* ignore */ }
@@ -868,7 +897,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     // dead-end start still bumps the streak and logs a phantom session.
     let natFirstItems = null;
     let natMod = natModule;
-    if (practiceMode === 'naturalness') {
+    if (isNat) {
       natMod = natModule || (await nat.loadModule(selectedLanguage));
       natFirstItems = nat.itemsFor(natMod, natCategories);
       if (!natFirstItems.length) {
@@ -904,7 +933,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     setPracticeHistory(updatedHistory);
     savePracticeHistory(updatedHistory);
 
-    if (practiceMode === 'naturalness') {
+    if (isNat) {
       if (natMod && natMod !== natModule) setNatModule(natMod);
       const items = natFirstItems;
       const first = nat.pickNext(items, natProgress, []);
@@ -962,7 +991,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     // not a generic X/6.00 German grade. That grade would be meaningless for a
     // drill transcript, would compete with the naturalness score, and costs a
     // model call to produce. This is free and says more.
-    if (practiceMode === 'naturalness') {
+    if (isNat) {
       const mine = natFindings.filter((f) => new Date(f.timestamp).getTime() >= sessionStartTime);
       const probes = mine.filter((f) => f.probedReach);
       const taken = probes.filter((f) => f.reached).length;
@@ -1099,11 +1128,10 @@ Format:
 
   const languages = ['German', 'Spanish', 'Portuguese', 'French', 'Italian', 'Hebrew', 'Arabic', 'Mandarin Chinese', 'Japanese', 'Korean', 'Russian', 'Dutch', 'Swedish', 'Turkish', 'Polish'];
   const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-  const modes = [
+  const coreModes = [
     { id: 'conversation', name: 'Conversation' },
     { id: 'grammar', name: 'Grammar' },
     { id: 'verbs', name: 'Verb Drill' },
-    { id: 'naturalness', name: 'Naturalness' },
     { id: 'vocabulary', name: 'Vocabulary' },
     { id: 'translation', name: 'Translation' },
     { id: 'articles', name: 'Article Gender' },
@@ -1111,9 +1139,32 @@ Format:
     { id: 'pronunciation', name: 'Pronunciation' },
     { id: 'weakAreas', name: 'Weak Areas' },
   ];
+  // One mode per naturalness area, so they are picked exactly like Grammar is.
+  //
+  // Listed from the static category list rather than the loaded module, so the
+  // options are in the dropdown on first paint instead of appearing a beat later
+  // — and so a module that fails to load does not make them vanish entirely.
+  // Once it has loaded, the list narrows to what is actually built.
+  const natAreaIds = natBuilt.length ? natBuilt : nat.CATEGORY_IDS;
+  const natModes = nat.hasModule(selectedLanguage)
+    ? [
+      { id: 'nat:mixed', name: 'Mixed — all areas' },
+      ...natAreaIds.map((id) => ({ id: `nat:${id}`, name: nat.CATEGORY_BY_ID[id]?.label || id })),
+    ]
+    : [];
+  const modes = [...coreModes, ...natModes];
+  const modeOptions = [
+    ...coreModes.map((m) => ({ value: m.id, label: m.name })),
+    // Absent for a language with no module, rather than present and empty.
+    ...(natModes.length
+      ? [{ group: 'Naturalness — sound native', options: natModes.map((m) => ({ value: m.id, label: m.name })) }]
+      : []),
+  ];
   const topics = ['general', 'business', 'travel', 'culture', 'technology', 'food', 'sports', 'health', 'education', 'entertainment'];
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-  const modeName = (modes.find((m) => m.id === practiceMode) || {}).name || 'Practice';
+  const modeName = (modes.find((m) => m.id === practiceMode) || {}).name
+    || (isNat ? (nat.CATEGORY_BY_ID[practiceMode.slice(4)]?.label || 'Naturalness') : null)
+    || 'Practice';
 
   const vars = theme === 'dark' ? DARK_VARS : LIGHT_VARS;
 
@@ -1215,13 +1266,15 @@ Format:
                 <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 20 }}>Session setup</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
                   <Select label="Language" value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)} options={languages.map((l) => ({ value: l, label: l }))} />
-                  <div style={{ display: 'flex', gap: 11 }}>
-                    <Select label="Level" value={proficiencyLevel} onChange={(e) => setProficiencyLevel(e.target.value)} options={levels.map((l) => ({ value: l, label: l }))} />
-                    <Select label="Mode" value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} options={modes.map((m) => ({ value: m.id, label: m.name }))} />
-                  </div>
-                  <Select label="Topic" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} options={topics.map((t) => ({ value: t, label: cap(t) }))} />
+                  <Select label="Mode" value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} options={modeOptions} />
+                  {!isNat && (
+                    <div style={{ display: 'flex', gap: 11 }}>
+                      <Select label="Level" value={proficiencyLevel} onChange={(e) => setProficiencyLevel(e.target.value)} options={levels.map((l) => ({ value: l, label: l }))} />
+                      <Select label="Topic" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} options={topics.map((t) => ({ value: t, label: cap(t) }))} />
+                    </div>
+                  )}
 
-                  {practiceMode !== 'naturalness' && nat.hasModule(selectedLanguage) && (
+                  {!isNat && nat.hasModule(selectedLanguage) && (
                     <div
                       onClick={toggleDetect}
                       title="Analyses your answers for what is correct but not native. One extra call per turn."
@@ -1240,48 +1293,23 @@ Format:
                     </div>
                   )}
 
-                  {practiceMode === 'naturalness' && (
+                  {isNat && (
                     <div>
-                      <div style={labelStyle}>Categories</div>
                       {!nat.hasModule(selectedLanguage) ? (
                         <div style={{ font: "400 11.5px 'IBM Plex Sans'", color: 'var(--faint)' }}>
                           No content for {selectedLanguage} yet. German is the only module built so far.
                         </div>
                       ) : (
-                        <>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                            {nat.CATEGORIES.map((c) => {
-                              const built = natBuilt.includes(c.id);
-                              const on = built && natCategories.includes(c.id);
-                              return (
-                                <span
-                                  key={c.id}
-                                  title={built ? c.blurb : 'Not built yet'}
-                                  onClick={() => {
-                                    if (!built) return;
-                                    setNatCategories((prev) => (prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id]));
-                                  }}
-                                  style={{
-                                    borderRadius: 999, padding: '3px 9px', font: "500 11.5px 'IBM Plex Sans'",
-                                    cursor: built ? 'pointer' : 'default',
-                                    background: on ? 'var(--accent-bg)' : 'var(--field)',
-                                    border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                                    color: built ? (on ? 'var(--accent)' : 'var(--soft)') : 'var(--faint)',
-                                    opacity: built ? 1 : 0.45,
-                                  }}
-                                >
-                                  {c.label}
-                                </span>
-                              );
-                            })}
+                        <div style={{ background: 'var(--field)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 12px' }}>
+                          <div style={{ font: "400 12px/1.5 'IBM Plex Sans'", color: 'var(--soft)' }}>
+                            {practiceMode === 'nat:mixed'
+                              ? 'Drills drawn from every area, one at a time.'
+                              : (nat.CATEGORY_BY_ID[practiceMode.slice(4)]?.blurb || '')}
                           </div>
-                          <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 8 }}>
-                            {natItems.length} item{natItems.length === 1 ? '' : 's'} ready · {natBuilt.length} of {nat.CATEGORIES.length} categories built
+                          <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 7 }}>
+                            {natItems.length} drill{natItems.length === 1 ? '' : 's'} · level and topic do not apply
                           </div>
-                          <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 4 }}>
-                            Level and topic do not affect these drills.
-                          </div>
-                        </>
+                        </div>
                       )}
                     </div>
                   )}
@@ -1339,7 +1367,7 @@ Format:
 
                   <button
                     onClick={handleStartPractice}
-                    disabled={!practiceMode || isLoading || (practiceMode === 'naturalness' && nat.hasModule(selectedLanguage) && natItems.length === 0)}
+                    disabled={!practiceMode || isLoading || (isNat && nat.hasModule(selectedLanguage) && natItems.length === 0)}
                     style={{ width: '100%', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 14px 'IBM Plex Sans'", padding: '12px', borderRadius: 8, cursor: 'pointer', boxShadow: '0 4px 14px var(--accent-glow)' }}
                   >
                     {isLoading && conversation.length === 0 ? 'Starting…' : conversation.length > 0 ? 'Restart session' : 'Start session'}
@@ -1350,7 +1378,7 @@ Format:
                     <div style={{ background: 'var(--green-bg)', border: '1px solid var(--green-border)', borderRadius: 9, padding: '13px 14px', marginBottom: 13 }}>
                       <div style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--green)', marginBottom: 6 }}>● Live · {liveTime}</div>
                       <div style={{ fontSize: 12.5, color: 'var(--green-ink)' }}>{answersLogged} answer{answersLogged === 1 ? '' : 's'} · {cap(modeName.toLowerCase())}</div>
-                      {practiceMode === 'naturalness' && natSessionProbes.length > 0 && (
+                      {isNat && natSessionProbes.length > 0 && (
                         <div style={{ fontSize: 12.5, color: 'var(--green-ink)', marginTop: 4 }}>
                           {natSessionTaken}/{natSessionProbes.length} openings taken
                         </div>
@@ -1370,7 +1398,7 @@ Format:
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 26px', borderBottom: '1px solid var(--border)', flex: '0 0 auto' }}>
                     <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)' }}>
                       {isDrilling ? 'Drilling · ' : ''}{modeName} · {proficiencyLevel}{topicFilter !== 'general' ? ` · ${cap(topicFilter)}` : ''}
-                      {natItem?.timeLimitSec && practiceMode === 'naturalness' && (
+                      {natItem?.timeLimitSec && isNat && (
                         <span style={{ marginLeft: 10, color: natElapsed > natItem.timeLimitSec ? 'var(--accent)' : 'var(--muted)' }}>
                           ⏱ {Math.max(0, natItem.timeLimitSec - natElapsed)}s
                         </span>
@@ -1405,7 +1433,7 @@ Format:
                                 }}
                                 dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
                               />
-                              {voiceOn && (practiceMode !== 'naturalness' || msg.speak) && (
+                              {voiceOn && (!isNat || msg.speak) && (
                                 <button
                                   onClick={() => voice.speak(msg.speak || msg.content, selectedLanguage)}
                                   title="Hear it"
@@ -1472,7 +1500,7 @@ Format:
                   </div>
                   <div style={{ font: "400 11px 'IBM Plex Mono'", color: 'var(--faint)', marginTop: 10 }}>
                     ↵ send
-                    {practiceMode === 'naturalness' && ' · "hint" for a nudge · "skip" to pass'}
+                    {isNat && ' · "hint" for a nudge · "skip" to pass'}
                     {(practiceMode === 'grammar' || practiceMode === 'verbs') && ' · Y/N to drill'}
                   </div>
                 </div>
