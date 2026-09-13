@@ -54,57 +54,64 @@ export function present(item) {
   switch (item.format) {
     case 'trapTranslation':
       return {
-        instruction: 'Say this in German, the way a native speaker actually would.',
+        instruction: 'Say this in German — the way a native would actually put it, not word for word.',
         stimulus: p.english,
-        extra: p.extra || null,
+        extras: p.extra ? [{ label: 'Note', value: p.extra }] : [],
         inputHint: 'Your German',
       };
     case 'insert':
       return {
-        instruction: 'Rewrite this so it carries the attitude in brackets.',
+        instruction: 'Rewrite this in German so it carries the attitude below.',
         stimulus: p.bare,
-        extra: `[ ${p.attitude} ]`,
+        extras: [{ label: 'Attitude', value: p.attitude }],
         inputHint: 'Your version',
       };
     case 'which':
       return {
-        instruction: 'Which one fits? Type just the word.',
+        instruction: 'Fill the gap with one of the German options below — type just that word.',
         stimulus: p.sentence,
-        extra: `${p.context}   —   ${(p.options || []).join('  ·  ')}`,
+        extras: [
+          { label: 'Context', value: p.context },
+          { label: 'Options', value: (p.options || []).join('  ·  ') },
+        ],
         inputHint: 'Your choice',
       };
     case 'minimalPair':
       return {
-        instruction: 'What changes between these two? Answer in English.',
-        stimulus: `${p.without}\n${p.with}`,
-        extra: null,
+        instruction: 'What changes between version 1 and version 2? Answer in English — a sentence is plenty.',
+        // Numbered, because several of these pairs are dialogues whose own "A:"
+        // and "B:" speaker labels otherwise read as the labels for the two
+        // versions, leaving no way to tell which line is which.
+        stimulus: `**1 ·** ${p.without}\n\n**2 ·** ${p.with}`,
+        extras: [],
         inputHint: 'What changes',
       };
     case 'reverseGloss':
       return {
-        instruction: 'What is being conveyed here? Answer in English.',
+        instruction: 'What is this conveying? Answer in English — a sentence is plenty.',
         stimulus: p.sentence,
-        extra: null,
+        extras: [],
         inputHint: 'What it conveys',
       };
     case 'react':
       return {
-        instruction: 'React to this in German — one to three words.',
+        instruction: 'Reply in German — one to three words.',
         stimulus: p.line,
-        extra: p.situation ? `[ ${p.situation} ]` : null,
+        extras: p.situation ? [{ label: 'Situation', value: p.situation }] : [],
         inputHint: 'Your reaction',
       };
     case 'soften':
       return {
-        instruction: 'Say the same thing, but pitched as described.',
+        instruction: 'Say the same thing in German, but pitched as below.',
         stimulus: p.blunt,
-        extra: `[ ${p.level} ]`,
+        extras: [{ label: 'Pitch it as', value: p.level }],
         inputHint: 'Your version',
       };
     default:
-      return { instruction: 'Answer:', stimulus: item.target, extra: null, inputHint: 'Answer' };
+      return { instruction: 'Answer:', stimulus: item.target, extras: [], inputHint: 'Answer' };
   }
 }
+
 
 /** Does this format probe reach — i.e. was it built as an opportunity? */
 export function probesReach(item) {
@@ -203,7 +210,8 @@ export function buildJudgeRequest(item, answer, elapsedSec) {
   const context = [
     `Format: ${item.format}`,
     `Target feature: ${item.particle}`,
-    `What the learner was shown: ${p.stimulus}${p.extra ? `  ${p.extra}` : ''}`,
+    `What the learner was shown: ${p.stimulus}`,
+    ...(p.extras || []).map((e) => `  ${e.label}: ${e.value}`),
     `Expected natural answer: ${item.target}`,
     item.note ? `Teaching note: ${item.note}` : null,
     item.timeLimitSec

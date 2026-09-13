@@ -680,7 +680,9 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       ? `*${nat.CATEGORY_BY_ID[item.categoryId]?.label || item.categoryId}*\n\n`
       : '';
     let out = `${cat}**${p.instruction}**\n\n${p.stimulus}`;
-    if (p.extra) out += `\n\n${p.extra}`;
+    // Each extra is labelled — a bare "[ … ]" never said what it was, which made
+    // instructions like "pitched as described" point at nothing.
+    (p.extras || []).forEach((e) => { out += `\n\n**${e.label}:** ${e.value}`; });
     return out;
   };
 
