@@ -327,6 +327,10 @@ export default function LanguagePracticeApp() {
     if (!text) return '';
     let rendered = text;
     rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Single-asterisk italics. Bold is converted first, so any * left is a single.
+    // The tutor emits these too (*meiner Mutter*), and they have always rendered
+    // as literal asterisks.
+    rendered = rendered.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
     rendered = rendered.replace(/^### (.+)$/gm, '<div style="font-size: 1.1em; font-weight: bold; margin: 8px 0 4px 0;">$1</div>');
     rendered = rendered.replace(/^## (.+)$/gm, '<div style="font-size: 1.2em; font-weight: bold; margin: 10px 0 5px 0;">$1</div>');
     rendered = rendered.replace(/^# (.+)$/gm, '<div style="font-size: 1.3em; font-weight: bold; margin: 12px 0 6px 0;">$1</div>');
@@ -619,6 +623,25 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     try { localStorage.setItem(`naturalness-progress-${selectedLanguage}`, JSON.stringify(map)); } catch (e) { /* ignore */ }
   };
 
+  /**
+   * The German in a drill prompt, or null when there is none to speak.
+   *
+   * A trapTranslation shows English and the German IS the answer, so speaking it
+   * would give the game away; `which` is a gapped sentence full of underscores.
+   * Everywhere else the stimulus is German and worth hearing.
+   */
+  const natSpeakable = (item) => {
+    const p = item.prompt || {};
+    switch (item.format) {
+      case 'insert': return p.bare || null;
+      case 'react': return p.line || null;
+      case 'soften': return p.blunt || null;
+      case 'reverseGloss': return p.sentence || null;
+      case 'minimalPair': return [p.without, p.with].filter(Boolean).join(' … ') || null;
+      default: return null;
+    }
+  };
+
   /** Render a drill item into a chat message. Built locally — no API call. */
   const natRender = (item) => {
     const p = nat.present(item);
@@ -682,7 +705,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       setNatItem(next);
       setNatItemShownAt(Date.now());
       setNatServed((prevServed) => [...prevServed, next.id]);
-      return [...msgs, { role: 'assistant', content: natRender(next) }];
+      return [...msgs, { role: 'assistant', content: natRender(next), speak: natSpeakable(next) }];
     }
     setNatItem(null);
     return [...msgs, { role: 'assistant', content: 'Nothing left in this selection — pick another category on the left.' }];
@@ -822,7 +845,8 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       }
 
       setNatHintLevel(0);
-      setConversation(natAdvance(progress, [...withAnswer, { role: 'assistant', content: body }]));
+      // The natural German is the thing worth hearing in the feedback.
+      setConversation(natAdvance(progress, [...withAnswer, { role: 'assistant', content: body, speak: j.naturalText || null }]));
     } catch (error) {
       console.error('Naturalness judge error:', error);
       setConversation([...withAnswer, { role: 'assistant', content: `Could not judge that answer — ${error.message}` }]);
@@ -881,7 +905,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       setNatItem(first);
       setNatServed([first.id]);
       setNatItemShownAt(Date.now());
-      setConversation([{ role: 'assistant', content: natRender(first) }]);
+      setConversation([{ role: 'assistant', content: natRender(first), speak: natSpeakable(first) }]);
       setIsLoading(false);
       return;
     }
@@ -1375,9 +1399,9 @@ Format:
                                 }}
                                 dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
                               />
-                              {voiceOn && (
+                              {voiceOn && (practiceMode !== 'naturalness' || msg.speak) && (
                                 <button
-                                  onClick={() => voice.speak(msg.content, selectedLanguage)}
+                                  onClick={() => voice.speak(msg.speak || msg.content, selectedLanguage)}
                                   title="Hear it"
                                   style={{ position: 'absolute', top: 6, right: -34, width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--field)', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}
                                 >

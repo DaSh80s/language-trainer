@@ -82,6 +82,7 @@ export function listen(language, { onPartial, onFinal, onError, onEnd } = {}) {
 export function speakableText(raw) {
   return String(raw || '')
     .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
     .replace(/^[✅❌⚪⚠️💡]\s*/gm, '')
     .replace(/\[[^\]]*\]/g, '')       // drill attitude brackets
     .replace(/^#+\s*/gm, '')
@@ -94,20 +95,40 @@ export function speak(text, language, { rate = 0.95, onEnd } = {}) {
   if (!synthesisSupported()) return false;
   const clean = speakableText(text);
   if (!clean) return false;
+
+  const synth = window.speechSynthesis;
+  const want = langCode(language).slice(0, 2);
+  let spoken = false;
+
+  const go = () => {
+    if (spoken) return;
+    spoken = true;
+    try {
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(clean);
+      u.lang = langCode(language);
+      u.rate = rate;
+      const voice = synth.getVoices().find((v) => v.lang?.startsWith(want));
+      if (voice) u.voice = voice;
+      if (onEnd) u.onend = onEnd;
+      synth.speak(u);
+    } catch (e) { /* nothing sensible to do */ }
+  };
+
+  // getVoices() is empty until the browser has loaded them — on Chrome that is
+  // after the first call. Speaking immediately would use whatever default voice
+  // is loaded, which is usually English. Wait for them, with a timeout so a
+  // browser that never fires the event still speaks.
   try {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(clean);
-    u.lang = langCode(language);
-    u.rate = rate;
-    const want = langCode(language).slice(0, 2);
-    const voice = window.speechSynthesis.getVoices().find((v) => v.lang?.startsWith(want));
-    if (voice) u.voice = voice;
-    if (onEnd) u.onend = onEnd;
-    window.speechSynthesis.speak(u);
-    return true;
-  } catch (e) {
-    return false;
-  }
+    if (!synth.getVoices().length && typeof synth.addEventListener === 'function') {
+      synth.addEventListener('voiceschanged', go, { once: true });
+      setTimeout(go, 300);
+      return true;
+    }
+  } catch (e) { /* fall through to speaking immediately */ }
+
+  go();
+  return true;
 }
 
 export function stopSpeaking() {
