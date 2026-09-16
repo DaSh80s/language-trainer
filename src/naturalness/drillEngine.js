@@ -114,7 +114,9 @@ export function present(item) {
       if (p.goal) {
         return {
           instruction: 'Say this in German — the way you would actually put it to them.',
-          stimulus: `**You want to:** ${p.goal}`,
+          // Goals are written as sentences; after "You want to:" they read as a
+          // continuation, so the first letter drops to lower case.
+          stimulus: `**You want to:** ${p.goal.charAt(0).toLowerCase()}${p.goal.slice(1)}`,
           extras: who ? [{ label: 'Who / how', value: who }] : [],
           inputHint: 'Your German',
         };

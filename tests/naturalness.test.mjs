@@ -56,6 +56,7 @@ t('goals do not smuggle in the long German words of the answer', soft.every((i) 
   return tWords(i.target).every((w) => !shown.includes(w));
 }), soft.filter((i) => { const shown = JSON.stringify(eng.present(i)).toLowerCase(); return tWords(i.target).some((w) => shown.includes(w)); })
   .map((i) => `${i.id}:${tWords(i.target).filter((w) => JSON.stringify(eng.present(i)).toLowerCase().includes(w)).join('/')}`).join(', '));
+t('goal reads as a continuation of "You want to:"', soft.every((i) => /\*\*You want to:\*\* [a-z]/.test(eng.present(i).stimulus)));
 t('judge still knows the clipped version to reject', JSON.stringify(eng.buildJudgeRequest(soft[0], 'x', 0)).includes(soft[0].prompt.blunt));
 
 console.log('\n== business formats ==');
