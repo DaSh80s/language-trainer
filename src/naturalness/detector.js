@@ -32,7 +32,7 @@ Hard rules:
 
 ALSO record what went RIGHT. If the learner used a modal particle, a reaction token, a correct collocation, a softened request or a signposting phrase naturally, record it as a positive. Positives drive the learner's score upward and are the main reason they keep going — do not skip them because finding faults feels more useful.
 
-Write explanations in English, one or two sentences, plain language.`;
+Write explanations in English, one or two sentences, plain language, addressed to the learner as "you" — never "the learner".`;
 
 const SCHEMA = {
   type: 'object',

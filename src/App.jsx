@@ -718,7 +718,13 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     const lines = [];
 
     if (ref) {
-      lines.push(`📖 **${ref.particle}** — ${ref.sense}`);
+      // Imported glosses sometimes restate the phrase ("'X' means …"), which
+      // reads as "X — X means …". Strip the echo.
+      const esc = String(ref.particle).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const sense = String(ref.sense || '')
+        .replace(new RegExp(`^['"‘’“”]?${esc}['"‘’“”]?\\s*(means|is|=|:)?\\s*`, 'i'), '')
+        .replace(/^./, (c) => c.toUpperCase());
+      lines.push(`📖 **${ref.particle}** — ${sense || ref.sense}`);
       if (ref.note) lines.push(ref.note);
     } else if (judged?.meaning) {
       lines.push(`📖 **${item.particle}** — ${judged.meaning}`);
@@ -1415,7 +1421,7 @@ Format:
                   </div>
                   {repeatedFillers(importDraft).map(({ w, n }) => (
                     <div key={w} style={{ background: 'var(--accent-bg)', borderRadius: 8, padding: '9px 11px', font: "400 12.5px/1.5 'IBM Plex Sans'", color: 'var(--soft)', marginBottom: 10 }}>
-                      ⚠️ <strong>{w}</strong> appears in {n} of these phrases. Fine once — but used in every sentence it becomes a tic of its own. Consider removing some.
+                      ⚠️ <strong>{w}</strong> appears in {n} of these phrases. Fine once, but repeated across your questions it becomes a tic of its own — worth keeping just one.
                     </div>
                   ))}
                   <div style={{ maxHeight: '46vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 9 }}>
@@ -1696,8 +1702,17 @@ Format:
                 <div style={{ flex: 1, padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', maxHeight: 'calc(100vh - 300px)', minHeight: 340 }}>
                   {conversation.length === 0 && !isLoading ? (
                     <div style={{ margin: 'auto', textAlign: 'center', maxWidth: 360 }}>
-                      <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, color: 'var(--soft)', lineHeight: 1.34 }}>Ready when you are.</div>
-                      <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>Pick a mode on the left, then press Start session.</div>
+                      {practiceMode === 'biz:mine' && natItems.length === 0 ? (
+                        <>
+                          <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, color: 'var(--soft)', lineHeight: 1.34 }}>Your pack is empty.</div>
+                          <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>Add phrases from feedback first — use the button on the left.</div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, color: 'var(--soft)', lineHeight: 1.34 }}>Ready when you are.</div>
+                          <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>Pick a mode on the left, then press Start session.</div>
+                        </>
+                      )}
                     </div>
                   ) : conversation.length === 0 && isLoading ? (
                     <div style={{ margin: 'auto', display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)' }}><Bounce /> Preparing your first exercise…</div>

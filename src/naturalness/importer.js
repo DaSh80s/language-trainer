@@ -30,7 +30,7 @@ Fields for each item:
 - better: the improved phrase in ${language}, exactly as suggested. A single phrase or sentence, never a list.
 - situation: short English telling the learner when and how to use it — written as an instruction for pitching it, e.g. "a polished question to a candidate about their preferred location". Never empty.
 - english: an English translation of "better".
-- meaning: one plain-English line on what the key word or construction does, so a learner who has never met it understands it.
+- meaning: one plain-English line on what the key word or construction does, so a learner who has never met it understands it. Do not start by repeating the key phrase (write "to have a clear overall understanding", not "'ein gutes Bild haben' means …").
 - keyPhrase: the one-to-four-word core expression being taught, in ${language} (e.g. "infrage kommen", "Verstanden").`;
 
 const SCHEMA = {

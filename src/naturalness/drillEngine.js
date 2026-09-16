@@ -204,6 +204,7 @@ Rules:
 - If the answer uses the target feature naturally, that is a POSITIVE result. Say so. Positive results matter as much as negative ones and are the main thing that keeps a learner going.
 - A different but equally natural answer than the expected one is still correct. Germans have more than one way to say most things.
 - Be specific and short. One or two sentences of explanation, in English.
+- Write to the learner directly, in the second person ("you"). Never refer to "the learner".
 - Never invent a fault to seem useful.
 
 Fields:
