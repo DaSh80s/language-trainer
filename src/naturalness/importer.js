@@ -127,7 +127,9 @@ export function toDrillItem(x, id) {
     return {
       ...common,
       format: 'soften',
-      prompt: { blunt: x.youSaid, level: x.situation || 'more natural and more professional' },
+      // Shown as "You want to say" (from the English) with the situation; the
+      // learner's own clipped wording is only revealed after they answer.
+      prompt: { blunt: x.youSaid, level: x.situation || 'more natural and more professional', who: x.situation || '' },
     };
   }
   return {

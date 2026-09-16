@@ -26,6 +26,7 @@ import meetings from './de/meetings.js';
 import numbers from './de/numbers.js';
 import candidates from './de/candidates.js';
 import email from './de/email.js';
+import goals from './de/goals.js';
 
 /** @type {import('../contract.js').LanguageModule} */
 const de = {
@@ -51,4 +52,13 @@ const de = {
   },
 };
 
+// Attach the English goal to each soften drill (see goals.js for why).
+Object.values(de.categories).forEach((cat) => {
+  cat.items.forEach((item) => {
+    const g = goals[item.id];
+    if (g && item.format === 'soften') item.prompt = { ...item.prompt, goal: g.goal, who: g.who };
+  });
+});
+
+export { goals };
 export default de;

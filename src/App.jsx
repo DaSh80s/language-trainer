@@ -688,7 +688,8 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     switch (item.format) {
       case 'insert': return p.bare || null;
       case 'react': return p.line || null;
-      case 'soften': return p.blunt || null;
+      // The German is the answer now, so there is nothing to speak beforehand.
+      case 'soften': return null;
       case 'reverseGloss': return p.sentence || null;
       case 'minimalPair': return [p.without, p.with].filter(Boolean).join(' … ') || null;
       case 'recap':
@@ -937,7 +938,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
         ...conversation,
         {
           role: 'assistant',
-          content: `⏭ Skipped. It wanted: **${item.target}**${natTeachBlock(item, null)}${probed ? '\n\nSkips count as an opening not taken — otherwise the score could be improved just by avoiding the hard ones.' : ''}`,
+          content: `⏭ Skipped. It wanted: **${item.target}**${item.format === 'soften' && item.prompt?.blunt && (item.prompt?.goal || item.english) ? `\n\n🚫 The clipped version to avoid: *${item.prompt.blunt}*` : ''}${natTeachBlock(item, null)}${probed ? '\n\nSkips count as an opening not taken — otherwise the score could be improved just by avoiding the hard ones.' : ''}`,
           // Hearing the answer you could not produce is the most useful moment
           // for the speak button, so long as the answer is actually German.
           speak: ['minimalPair', 'reverseGloss'].includes(item.format) ? null : item.target,
@@ -1007,6 +1008,10 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       if (j.naturalText) body += `**${j.naturalText}**\n\n`;
       if (j.explanation) body += `${j.explanation}\n`;
       if (item.note) body += `\n💡 ${item.note}`;
+      // The clipped version is only revealed now, as the thing to avoid.
+      if (item.format === 'soften' && item.prompt?.blunt && (item.prompt?.goal || item.english)) {
+        body += `\n\n🚫 The clipped version to avoid: *${item.prompt.blunt}*`;
+      }
       if (!j.landed) body += natTeachBlock(item, j);
       if (item.confidence === 'review') {
         body += `\n\n⚠️ This one is genuinely contested among native speakers — worth checking against what you actually hear in Zurich.`;

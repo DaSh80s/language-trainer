@@ -1,6 +1,6 @@
 // Naturalness + Business drill tests. Run: node tests/naturalness.test.mjs
 // Plain Node, no framework, no API calls.
-import de from '../src/naturalness/modules/de.js';
+import de, { goals } from '../src/naturalness/modules/de.js';
 import * as eng from '../src/naturalness/drillEngine.js';
 import * as sc from '../src/naturalness/scoring.js';
 import * as nat from '../src/naturalness/index.js';
@@ -37,6 +37,27 @@ t('react instruction matches the expected length', all.filter((i) => i.format ==
   return words <= 3 ? ins.includes('one to three words') : ins.includes('short sentence');
 }));
 
+console.log('\n== soften drills: intent first, answer not handed over ==');
+const soft = all.filter((i) => i.format === 'soften');
+t('every soften drill has an English goal and a who/how', soft.every((i) => i.prompt.goal && i.prompt.who),
+  soft.filter((i) => !i.prompt.goal || !i.prompt.who).map((i) => i.id).join(','));
+t('every goal belongs to a real soften drill with the same clipped wording', Object.entries(goals).every(([id, g]) => {
+  const it = all.find((i) => i.id === id);
+  return it && it.format === 'soften' && it.prompt.blunt === g.blunt;
+}), Object.entries(goals).filter(([id, g]) => { const it = all.find((i) => i.id === id); return !it || it.prompt.blunt !== g.blunt; }).map(([id]) => id).join(','));
+t('the clipped German is not shown before answering', soft.every((i) => !JSON.stringify(eng.present(i)).includes(i.prompt.blunt)));
+t('the instruction no longer says "pitched as below"', soft.every((i) => !/pitched as below/.test(eng.present(i).instruction)));
+// Words spelt the same in English and German cannot be kept out of an English
+// goal, and are not a giveaway. Everything else long enough to matter is checked.
+const SHARED_WORDS = new Set(['interim']);
+const tWords = (s) => s.toLowerCase().replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter((w) => w.length > 6 && !SHARED_WORDS.has(w));
+t('goals do not smuggle in the long German words of the answer', soft.every((i) => {
+  const shown = JSON.stringify(eng.present(i)).toLowerCase();
+  return tWords(i.target).every((w) => !shown.includes(w));
+}), soft.filter((i) => { const shown = JSON.stringify(eng.present(i)).toLowerCase(); return tWords(i.target).some((w) => shown.includes(w)); })
+  .map((i) => `${i.id}:${tWords(i.target).filter((w) => JSON.stringify(eng.present(i)).toLowerCase().includes(w)).join('/')}`).join(', '));
+t('judge still knows the clipped version to reject', JSON.stringify(eng.buildJudgeRequest(soft[0], 'x', 0)).includes(soft[0].prompt.blunt));
+
 console.log('\n== business formats ==');
 t('recaps list the facts to check', all.filter((i) => i.format === 'recap').every((i) => i.mustInclude?.length));
 t('clarifies list what to pin down', all.filter((i) => i.format === 'clarify').every((i) => i.mustPin?.length));
@@ -70,6 +91,7 @@ const raw = JSON.stringify({ items: [
 const imp = nat.parseImport(raw, 123);
 t('parses items, drops empty and duplicate', imp.ok && imp.items.length === 2, imp.items.length);
 t('you-said pair becomes a soften drill', imp.items[0].format === 'soften' && imp.items[0].prompt.blunt === 'Ist Zürich Ihnen lieb?');
+t('imported soften shows the English, not your clipped German', eng.present(imp.items[0]).stimulus.includes('Is the Zurich area') && !JSON.stringify(eng.present(imp.items[0])).includes('Ist Zürich Ihnen lieb?'));
 t('bare phrase becomes a translation drill', imp.items[1].format === 'trapTranslation' && imp.items[1].prompt.english === 'Understood.');
 t('imported items present cleanly', imp.items.every((i) => { const p = eng.present(i); return p.instruction && p.stimulus && (p.extras || []).every((e) => e.value); }));
 t('garbage reply degrades, no throw', nat.parseImport('not json').ok === false);

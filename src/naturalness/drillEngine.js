@@ -106,13 +106,36 @@ export function present(item) {
         extras: p.situation ? [{ label: 'Situation', value: p.situation }] : [],
         inputHint: 'Your reaction',
       };
-    case 'soften':
+    case 'soften': {
+      // Start from the intent, never from the clipped German: showing that
+      // handed over most of the answer and left "pitched as below" as the only
+      // instruction. The clipped version is revealed after answering instead.
+      const who = p.who || p.level;
+      if (p.goal) {
+        return {
+          instruction: 'Say this in German — the way you would actually put it to them.',
+          stimulus: `**You want to:** ${p.goal}`,
+          extras: who ? [{ label: 'Who / how', value: who }] : [],
+          inputHint: 'Your German',
+        };
+      }
+      // Imported phrases carry the English meaning of the better version.
+      if (item.english) {
+        return {
+          instruction: 'Say this in German — the way you would actually put it to them.',
+          stimulus: `**You want to say:** "${item.english}"`,
+          extras: who ? [{ label: 'Who / how', value: who }] : [],
+          inputHint: 'Your German',
+        };
+      }
+      // Last resort, with no English to work from: rewrite, but say plainly what that means.
       return {
-        instruction: 'Say the same thing in German, but pitched as below.',
+        instruction: 'This German sounds clipped. Rewrite it in German as a complete, polished version.',
         stimulus: p.blunt,
-        extras: [{ label: 'Pitch it as', value: p.level }],
-        inputHint: 'Your version',
+        extras: who ? [{ label: 'Who / how', value: who }] : [],
+        inputHint: 'Your German',
       };
+    }
     case 'recap':
       return {
         instruction: 'Summarise this back to them in German before moving on — every key fact, in your own words.',
@@ -255,6 +278,9 @@ export function buildJudgeRequest(item, answer, elapsedSec) {
     ...(p.extras || []).map((e) => `  ${e.label}: ${e.value}`),
     `Expected natural answer: ${item.target}`,
     item.note ? `Teaching note: ${item.note}` : null,
+    item.format === 'soften' && item.prompt?.blunt && (item.prompt?.goal || item.english)
+      ? `The clipped version the learner must avoid (NOT shown to them before answering): ${item.prompt.blunt}. If their answer is essentially this clipped version, landed is false.`
+      : null,
     item.mustInclude?.length
       ? `This is a RECAP. Key facts the summary must carry: ${item.mustInclude.join('; ')}. A missing or distorted fact means landed is false, and the explanation must name which fact. reached = they actually summarised rather than replying or asking a new question.`
       : null,
