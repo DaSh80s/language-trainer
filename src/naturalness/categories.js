@@ -8,7 +8,7 @@
  * matter for PROFESSIONAL SPOKEN German. See NATURALNESS.md for what was cut
  * and why.
  *
- * @typedef {'particles'|'reactions'|'discourse'|'register'|'repair'|'collocations'|'interference'|'calls'|'meetings'|'numbers'|'candidates'|'email'} CategoryId
+ * @typedef {'particles'|'reactions'|'discourse'|'register'|'repair'|'collocations'|'interference'|'calls'|'meetings'|'numbers'|'candidates'|'email'|'mine'} CategoryId
  */
 
 /**
@@ -111,6 +111,16 @@ export const CATEGORIES = [
     label: 'Email',
     blurb: 'Business email that reads naturally: openings, requests, follow-ups and sign-offs.',
     weight: 0.6,
+  },
+  {
+    // The learner's own pack, built from pasted feedback. Stored per language in
+    // the browser, merged into the module at runtime. Always listed, even when
+    // empty, so the way to fill it is discoverable.
+    id: 'mine',
+    group: 'business',
+    label: 'My phrases',
+    blurb: 'Phrasing from feedback on your own German — paste a call review or a teacher\'s corrections and it becomes drills.',
+    weight: 0.9,
   },
 ];
 

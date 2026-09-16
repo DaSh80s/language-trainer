@@ -238,7 +238,19 @@ export default function LanguagePracticeApp() {
 
   // Naturalness layer state. Findings are kept separate from the grammar error
   // store at the data layer, even though both surface near each other in the UI.
-  const [natModule, setNatModule] = useState(null);
+  const [natBaseModule, setNatBaseModule] = useState(null);
+  // "My phrases": drill items imported from the learner's own feedback, per language.
+  const [myPack, setMyPack] = useState([]);
+  // Everything downstream reads natModule, which is the language module with
+  // the learner's pack merged in as the 'mine' category.
+  const natModule = React.useMemo(() => nat.mergeMyPack(natBaseModule, myPack), [natBaseModule, myPack]);
+  // Feedback importer (modal)
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importStatus, setImportStatus] = useState('idle'); // idle | loading | preview | error
+  const [importDraft, setImportDraft] = useState([]);
+  const [importError, setImportError] = useState('');
+  const [importNotice, setImportNotice] = useState('');
   // The naturalness area is chosen in the Mode dropdown ('nat:particles'), so
   // there is no separate category state to keep in sync.
   const [natItem, setNatItem] = useState(null);
@@ -306,7 +318,7 @@ export default function LanguagePracticeApp() {
   // Content modules load on demand so they never reach first paint.
   useEffect(() => {
     let live = true;
-    nat.loadModule(selectedLanguage).then((m) => { if (live) setNatModule(m); });
+    nat.loadModule(selectedLanguage).then((m) => { if (live) setNatBaseModule(m); });
     return () => { live = false; };
   }, [selectedLanguage]);
 
@@ -374,6 +386,11 @@ export default function LanguagePracticeApp() {
 
       const errors = localStorage.getItem(`errors-${selectedLanguage}`);
       if (errors) setCommonErrors(JSON.parse(errors)); else setCommonErrors([]);
+
+      try {
+        const mine = localStorage.getItem(`mypack-${selectedLanguage}`);
+        setMyPack(mine ? JSON.parse(mine) : []);
+      } catch (e) { setMyPack([]); }
 
       const verbs = localStorage.getItem(`verbs-${selectedLanguage}`);
       setVerbInput(verbs || '');
@@ -718,6 +735,70 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     return lines.length ? `\n\n${lines.join('\n')}` : '';
   };
 
+  // ── Feedback importer ──────────────────────────────────────────────────────
+  const saveMyPack = (pack) => {
+    setMyPack(pack);
+    try { localStorage.setItem(`mypack-${selectedLanguage}`, JSON.stringify(pack)); } catch (e) { /* ignore */ }
+  };
+
+  const openImport = () => {
+    setImportStatus('idle');
+    setImportError('');
+    setImportNotice('');
+    setImportDraft([]);
+    setImportOpen(true);
+  };
+
+  const runImport = async () => {
+    if (!importText.trim()) return;
+    setImportStatus('loading');
+    setImportError('');
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nat.buildImportRequest(importText, selectedLanguage)),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
+      const body = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+      const parsed = nat.parseImport(body);
+      if (!parsed.items.length) {
+        setImportError(parsed.error || 'No phrases found.');
+        setImportStatus('error');
+        return;
+      }
+      setImportDraft(parsed.items);
+      setImportStatus('preview');
+    } catch (error) {
+      console.error('Import error:', error);
+      setImportError(`Could not read that feedback (${error.message}). Try again, or paste a shorter section.`);
+      setImportStatus('error');
+    }
+  };
+
+  const saveImport = () => {
+    const { pack, added, skipped } = nat.mergeIntoPack(myPack, importDraft);
+    saveMyPack(pack);
+    setImportDraft([]);
+    setImportText('');
+    setImportStatus('idle');
+    setImportNotice(`Added ${added} phrase${added === 1 ? '' : 's'}${skipped ? ` · ${skipped} already in your pack` : ''}.`);
+    if (practiceMode !== 'biz:mine') setPracticeMode('biz:mine');
+  };
+
+  /**
+   * A filler word that recurs across most of the imported phrases. Feedback can
+   * swap one tic for another (e.g. "grundsätzlich" in several suggestions); the
+   * importer must not rewrite the feedback, so it points it out instead.
+   */
+  const repeatedFillers = (items) => {
+    const list = natModule?.fillers || [];
+    return list
+      .map((w) => ({ w, n: items.filter((i) => new RegExp(`\\b${w}\\b`, 'i').test(i.target)).length }))
+      .filter((x) => x.n >= 2);
+  };
+
   /** Render a drill item into a chat message. Built locally — no API call. */
   const natRender = (item) => {
     const p = nat.present(item);
@@ -948,7 +1029,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     let natFirstItems = null;
     let natMod = natModule;
     if (isNat) {
-      natMod = natModule || (await nat.loadModule(selectedLanguage));
+      natMod = natModule || nat.mergeMyPack(await nat.loadModule(selectedLanguage), myPack);
       natFirstItems = nat.itemsFor(natMod, natCategories);
       if (!natFirstItems.length) {
         const noModule = !nat.hasModule(selectedLanguage);
@@ -984,7 +1065,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
     savePracticeHistory(updatedHistory);
 
     if (isNat) {
-      if (natMod && natMod !== natModule) setNatModule(natMod);
+      if (natMod && !natBaseModule) setNatBaseModule(natMod);
       const items = natFirstItems;
       const first = nat.pickNext(items, natProgress, []);
       setNatItem(first);
@@ -1201,7 +1282,9 @@ Format:
   const drillGroups = nat.hasModule(selectedLanguage)
     ? nat.GROUPS.map((g) => {
       const staticIds = nat.categoryIdsInGroup(g.id);
-      const ids = natBuilt.length ? natBuilt.filter((id) => staticIds.includes(id)) : staticIds;
+      const ids = natBuilt.length ? natBuilt.filter((id) => staticIds.includes(id)) : staticIds.filter((id) => id !== 'mine');
+      // Always offer My phrases, even empty — it is how the pack gets filled.
+      if (g.id === 'business' && !ids.includes('mine')) ids.push('mine');
       return {
         ...g,
         modes: ids.length
@@ -1274,6 +1357,134 @@ Format:
         className="fluo-page"
         style={{ ...vars, minHeight: '100vh', background: 'var(--page)', fontFamily: "'IBM Plex Sans',sans-serif", color: 'var(--ink)', padding: '30px 28px 60px', transition: 'background .25s' }}
       >
+        {/* ===== FEEDBACK IMPORTER ===== */}
+        {importOpen && (
+          <div
+            onClick={() => { if (importStatus !== 'loading') setImportOpen(false); }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(20,16,10,.45)', zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '6vh 16px', overflowY: 'auto' }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-label="Turn feedback into drills"
+              style={{ width: '100%', maxWidth: 640, background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 12px 40px var(--shadow)', padding: '24px 26px' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                <div style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 20, color: 'var(--ink)' }}>Turn feedback into drills</div>
+                <button onClick={() => setImportOpen(false)} disabled={importStatus === 'loading'} aria-label="Close" style={{ border: 'none', background: 'transparent', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
+              </div>
+
+              {importStatus !== 'preview' && (
+                <>
+                  <div style={{ font: "400 13px/1.55 'IBM Plex Sans'", color: 'var(--soft)', margin: '8px 0 14px' }}>
+                    Paste a call review, a teacher's corrections, or any list of better phrasings in {selectedLanguage}. Fluo pulls out the concrete phrases — nothing invented — and you check every one before it is saved.
+                  </div>
+                  <textarea
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                    disabled={importStatus === 'loading'}
+                    placeholder={'For example:\n| Ist Zürich Ihnen lieb? | Ist die Region Zürich Ihr bevorzugter Arbeitsort? |\n- Verstanden.\n- Gut zu wissen.'}
+                    rows={9}
+                    style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', background: 'var(--input)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 12px', font: "400 13px/1.5 'IBM Plex Sans'", color: 'var(--ink)' }}
+                  />
+                  {importStatus === 'error' && (
+                    <div style={{ font: "400 12.5px 'IBM Plex Sans'", color: 'var(--accent)', marginTop: 8 }}>{importError}</div>
+                  )}
+                  {importNotice && importStatus === 'idle' && (
+                    <div style={{ font: "500 12.5px 'IBM Plex Sans'", color: 'var(--green)', marginTop: 8 }}>{importNotice}</div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                    <button
+                      onClick={runImport}
+                      disabled={!importText.trim() || importStatus === 'loading'}
+                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 13.5px 'IBM Plex Sans'", padding: '10px 18px', borderRadius: 8, cursor: 'pointer', opacity: !importText.trim() || importStatus === 'loading' ? 0.55 : 1 }}
+                    >
+                      {importStatus === 'loading' ? 'Reading…' : 'Find phrases'}
+                    </button>
+                    {importStatus === 'loading' && (
+                      <span style={{ font: "400 12px 'IBM Plex Sans'", color: 'var(--muted)' }}>This usually takes 15–30 seconds.</span>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {importStatus === 'preview' && (
+                <>
+                  <div style={{ font: "400 13px/1.55 'IBM Plex Sans'", color: 'var(--soft)', margin: '8px 0 12px' }}>
+                    Found <strong>{importDraft.length}</strong> phrase{importDraft.length === 1 ? '' : 's'}. Remove any that are wrong or that you do not want to drill, then save.
+                  </div>
+                  {repeatedFillers(importDraft).map(({ w, n }) => (
+                    <div key={w} style={{ background: 'var(--accent-bg)', borderRadius: 8, padding: '9px 11px', font: "400 12.5px/1.5 'IBM Plex Sans'", color: 'var(--soft)', marginBottom: 10 }}>
+                      ⚠️ <strong>{w}</strong> appears in {n} of these phrases. Fine once — but used in every sentence it becomes a tic of its own. Consider removing some.
+                    </div>
+                  ))}
+                  <div style={{ maxHeight: '46vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 9 }}>
+                    {importDraft.map((it) => (
+                      <div key={it.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderBottom: '1px solid var(--border-2)' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {it.format === 'soften' && (
+                            <div style={{ font: "400 12px 'IBM Plex Sans'", color: 'var(--muted)', textDecoration: 'line-through' }}>{it.prompt.blunt}</div>
+                          )}
+                          <div style={{ font: "600 13.5px/1.45 'IBM Plex Sans'", color: 'var(--ink)' }}>{it.target}</div>
+                          <div style={{ font: "400 12px/1.45 'IBM Plex Sans'", color: 'var(--muted)', marginTop: 2 }}>{it.meaning || it.english}</div>
+                        </div>
+                        <button
+                          onClick={() => setImportDraft((d) => d.filter((x) => x.id !== it.id))}
+                          title="Remove"
+                          aria-label={`Remove ${it.target}`}
+                          style={{ flex: '0 0 auto', border: '1px solid var(--border)', background: 'var(--field)', color: 'var(--muted)', borderRadius: 6, width: 26, height: 26, cursor: 'pointer' }}
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                    <button
+                      onClick={saveImport}
+                      disabled={!importDraft.length}
+                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 13.5px 'IBM Plex Sans'", padding: '10px 18px', borderRadius: 8, cursor: 'pointer', opacity: importDraft.length ? 1 : 0.55 }}
+                    >
+                      Save {importDraft.length} drill{importDraft.length === 1 ? '' : 's'}
+                    </button>
+                    <button
+                      onClick={() => { setImportDraft([]); setImportStatus('idle'); }}
+                      style={{ background: 'var(--field)', border: '1px solid var(--border)', color: 'var(--soft)', font: "500 13.5px 'IBM Plex Sans'", padding: '10px 18px', borderRadius: 8, cursor: 'pointer' }}
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {importStatus !== 'preview' && myPack.length > 0 && (
+                <div style={{ marginTop: 22 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                    <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)' }}>Your phrases · {myPack.length}</div>
+                    <button
+                      onClick={() => { if (window.confirm(`Remove all ${myPack.length} of your phrases? This cannot be undone.`)) saveMyPack([]); }}
+                      style={{ border: 'none', background: 'transparent', color: 'var(--muted)', font: "400 12px 'IBM Plex Sans'", cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Remove all
+                    </button>
+                  </div>
+                  <div style={{ maxHeight: '30vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 9 }}>
+                    {myPack.map((it) => (
+                      <div key={it.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border-2)' }}>
+                        <div style={{ flex: 1, minWidth: 0, font: "400 13px/1.45 'IBM Plex Sans'", color: 'var(--ink)' }}>{it.target}</div>
+                        <button
+                          onClick={() => saveMyPack(myPack.filter((x) => x.id !== it.id))}
+                          title="Remove"
+                          aria-label={`Remove ${it.target}`}
+                          style={{ flex: '0 0 auto', border: '1px solid var(--border)', background: 'var(--field)', color: 'var(--muted)', borderRadius: 6, width: 24, height: 24, cursor: 'pointer' }}
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
 
           {/* ===== HEADER ===== */}
@@ -1370,6 +1581,14 @@ Format:
                           <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 7 }}>
                             {natItems.length} drill{natItems.length === 1 ? '' : 's'} · level and topic do not apply
                           </div>
+                          {practiceMode === 'biz:mine' && (
+                            <button
+                              onClick={openImport}
+                              style={{ marginTop: 10, width: '100%', background: 'var(--accent-bg)', border: '1px solid var(--accent)', color: 'var(--accent)', font: "600 12.5px 'IBM Plex Sans'", padding: '8px 10px', borderRadius: 7, cursor: 'pointer' }}
+                            >
+                              {myPack.length ? 'Add or manage phrases' : '+ Add phrases from feedback'}
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

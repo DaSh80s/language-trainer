@@ -32,6 +32,9 @@ const de = {
   code: 'de',
   label: 'German',
   variants: [{ id: 'ch', label: 'Swiss Standard German' }],
+  // Words that turn into a verbal tic when every sentence leans on them. The
+  // feedback importer points these out when they recur across imported phrases.
+  fillers: ['grundsätzlich', 'eigentlich', 'quasi', 'sozusagen', 'irgendwie', 'halt'],
   categories: {
     particles,
     reactions,

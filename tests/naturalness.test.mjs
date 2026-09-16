@@ -60,6 +60,32 @@ t('every business item has a curated gloss', inGroup('business').every((i) => na
 const js = eng.parseJudgement(JSON.stringify({ reached: false, landed: false, severity: 'noticeable', naturalText: 'a', explanation: 'b', meaning: 'm', example: 'e' }));
 t('judge meaning and example parsed', js.meaning === 'm' && js.example === 'e');
 
+console.log('\n== feedback importer ==');
+const raw = JSON.stringify({ items: [
+  { youSaid: 'Ist Zürich Ihnen lieb?', better: 'Ist die Region Zürich Ihr bevorzugter Arbeitsort?', situation: 'a polished question about location', english: 'Is the Zurich area your preferred place of work?', meaning: 'bevorzugter Arbeitsort = preferred place of work', keyPhrase: 'bevorzugter Arbeitsort' },
+  { youSaid: '', better: 'Verstanden.', situation: 'acknowledging, instead of okay', english: 'Understood.', meaning: 'a crisp acknowledgement', keyPhrase: 'Verstanden' },
+  { youSaid: '', better: 'verstanden', situation: 'dup', english: 'dup', meaning: 'dup', keyPhrase: 'Verstanden' },
+  { youSaid: '', better: '', situation: 'empty', english: '', meaning: '', keyPhrase: '' },
+] });
+const imp = nat.parseImport(raw, 123);
+t('parses items, drops empty and duplicate', imp.ok && imp.items.length === 2, imp.items.length);
+t('you-said pair becomes a soften drill', imp.items[0].format === 'soften' && imp.items[0].prompt.blunt === 'Ist Zürich Ihnen lieb?');
+t('bare phrase becomes a translation drill', imp.items[1].format === 'trapTranslation' && imp.items[1].prompt.english === 'Understood.');
+t('imported items present cleanly', imp.items.every((i) => { const p = eng.present(i); return p.instruction && p.stimulus && (p.extras || []).every((e) => e.value); }));
+t('garbage reply degrades, no throw', nat.parseImport('not json').ok === false);
+const m1 = nat.mergeIntoPack([], imp.items);
+const m2 = nat.mergeIntoPack(m1.pack, imp.items);
+t('merge adds new', m1.added === 2);
+t('merge skips phrases already in the pack', m2.added === 0 && m2.skipped === 2 && m2.pack.length === 2);
+const merged = nat.mergeMyPack(de, m1.pack);
+t('merged module exposes My phrases', merged.categories.mine.items.length === 2 && nat.builtCategories(merged).includes('mine'));
+t('base module is not mutated', !de.categories.mine);
+t('imported phrase gets a gloss for teaching on a miss', nat.referenceFor(merged, 'mine', 'Verstanden')?.sense === 'a crisp acknowledgement');
+t('empty pack is not a built category', !nat.builtCategories(nat.mergeMyPack(de, [])).includes('mine'));
+t('mergeMyPack tolerates no module', nat.mergeMyPack(null, m1.pack) === null);
+t('judge context covers imported phrases', JSON.stringify(eng.buildJudgeRequest(merged.categories.mine.items[0], 'x', 0)).includes('real feedback'));
+t('German module lists filler words', Array.isArray(de.fillers) && de.fillers.includes('grundsätzlich'));
+
 console.log('\n== scoring ==');
 const mk = (cat, o) => ({ categoryId: cat, itemId: 'x', particle: 'p', probedReach: true, reached: true, landed: true, severity: null, ...o });
 t('empty reads neutral', sc.hitRate([]).observations === 0);

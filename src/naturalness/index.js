@@ -9,6 +9,7 @@
 
 export { CATEGORIES, CATEGORY_BY_ID, CATEGORY_IDS, FORMATS, GROUPS, categoryIdsInGroup } from './categories.js';
 export * as scoring from './scoring.js';
+export { buildImportRequest, parseImport, mergeIntoPack, mergeMyPack, MAX_IMPORT_ITEMS } from './importer.js';
 export { pickNext, present, probesReach, buildJudgeRequest, parseJudgement, hintFor, JUDGE_MODEL } from './drillEngine.js';
 
 /** App language names → module codes. Absent means no module exists yet. */

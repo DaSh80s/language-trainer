@@ -12,5 +12,6 @@ const t = (n, c, d = '') => { if (!c) { fails++; console.log('  FAIL', n, d); } 
 t('app renders', html.length > 5000, html.length);
 t('Naturalness group in dropdown on first paint', groups.some((g) => g.startsWith('Naturalness')), groups.join(','));
 t('Business group in dropdown on first paint', groups.some((g) => g.startsWith('Business')), groups.join(','));
+t('My phrases offered even with an empty pack', /value="biz:mine"/.test(html));
 console.log(fails ? `\n${fails} FAILURE(S)\n` : '\nRender checks passed.\n');
 process.exit(fails ? 1 : 0);

@@ -161,6 +161,7 @@ const DEVICE = {
   numbers: 'the precise term for the figure, and every detail pinned down',
   candidates: 'a complete, polished question rather than a clipped one',
   email: 'the courtesy formula business email expects',
+  mine: 'the phrasing from your own feedback',
 };
 
 export function hintFor(item, level = 1) {
@@ -240,6 +241,7 @@ const CATEGORY_GROUP_HINT = {
   numbers: 'Context: discussing figures and employment terms in Switzerland. Precision matters as much as naturalness.',
   candidates: 'Context: a recruiter qualifying a candidate by phone in Switzerland. Questions should be complete and polished, but not stiff or over-long — and must not lean on the same filler (e.g. grundsätzlich) every time.',
   email: 'Context: Swiss business email. Judge courtesy and naturalness of written business German; Swiss spelling (ss, never ß).',
+  mine: 'Context: phrasing the learner collected from real feedback on their own speech. Judge naturalness and professional fit; an equally natural alternative is fully correct.',
 };
 
 export function buildJudgeRequest(item, answer, elapsedSec) {
