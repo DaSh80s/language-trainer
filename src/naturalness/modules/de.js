@@ -21,6 +21,11 @@ import register from './de/register.js';
 import repair from './de/repair.js';
 import collocations from './de/collocations.js';
 import interference from './de/interference.js';
+import calls from './de/calls.js';
+import meetings from './de/meetings.js';
+import numbers from './de/numbers.js';
+import candidates from './de/candidates.js';
+import email from './de/email.js';
 
 /** @type {import('../contract.js').LanguageModule} */
 const de = {
@@ -35,6 +40,11 @@ const de = {
     repair,
     collocations,
     interference,
+    calls,
+    meetings,
+    numbers,
+    candidates,
+    email,
   },
 };
 

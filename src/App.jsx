@@ -32,7 +32,9 @@ const ARTICLES = new Set([
  * 'nat:' prefix — 'nat:particles', or 'nat:mixed' for all of them. They sit in
  * the same dropdown as Grammar because that is how a mode gets chosen here.
  */
-const isNatMode = (m) => typeof m === 'string' && m.startsWith('nat:');
+const isNatMode = (m) => typeof m === 'string' && (m.startsWith('nat:') || m.startsWith('biz:'));
+/** Which dropdown group a drill mode belongs to. Both prefixes are four characters. */
+const drillGroupOf = (m) => (typeof m === 'string' && m.startsWith('biz:') ? 'business' : 'naturalness');
 
 function splitArticle(word) {
   if (!word) return [null, word || ''];
@@ -634,7 +636,12 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
   const natCategories = React.useMemo(() => {
     if (!isNatMode(practiceMode)) return [];
     const c = practiceMode.slice(4);
-    return c === 'mixed' ? natBuilt : [c];
+    // Mixed stays inside its own group: Business mixed never serves particles.
+    if (c === 'mixed') {
+      const inGroup = nat.categoryIdsInGroup(drillGroupOf(practiceMode));
+      return natBuilt.filter((id) => inGroup.includes(id));
+    }
+    return [c];
   }, [practiceMode, natBuilt]);
   const natItems = React.useMemo(() => nat.itemsFor(natModule, natCategories), [natModule, natCategories]);
 
@@ -667,6 +674,8 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       case 'soften': return p.blunt || null;
       case 'reverseGloss': return p.sentence || null;
       case 'minimalPair': return [p.without, p.with].filter(Boolean).join(' … ') || null;
+      case 'recap':
+      case 'clarify': return p.said || null;
       default: return null;
     }
   };
@@ -1186,20 +1195,29 @@ Format:
   // options are in the dropdown on first paint instead of appearing a beat later
   // — and so a module that fails to load does not make them vanish entirely.
   // Once it has loaded, the list narrows to what is actually built.
-  const natAreaIds = natBuilt.length ? natBuilt : nat.CATEGORY_IDS;
-  const natModes = nat.hasModule(selectedLanguage)
-    ? [
-      { id: 'nat:mixed', name: 'Mixed — all areas' },
-      ...natAreaIds.map((id) => ({ id: `nat:${id}`, name: nat.CATEGORY_BY_ID[id]?.label || id })),
-    ]
+  // One mode per area, grouped: Naturalness and Business, each with a Mixed.
+  // Listed from the static category list so the options exist on first paint;
+  // once the module has loaded they narrow to what is actually built.
+  const drillGroups = nat.hasModule(selectedLanguage)
+    ? nat.GROUPS.map((g) => {
+      const staticIds = nat.categoryIdsInGroup(g.id);
+      const ids = natBuilt.length ? natBuilt.filter((id) => staticIds.includes(id)) : staticIds;
+      return {
+        ...g,
+        modes: ids.length
+          ? [
+            { id: `${g.prefix}mixed`, name: g.id === 'business' ? 'Mixed — all packs' : 'Mixed — all areas' },
+            ...ids.map((id) => ({ id: `${g.prefix}${id}`, name: nat.CATEGORY_BY_ID[id]?.label || id })),
+          ]
+          : [],
+      };
+    }).filter((g) => g.modes.length)
     : [];
-  const modes = [...coreModes, ...natModes];
+  const modes = [...coreModes, ...drillGroups.flatMap((g) => g.modes)];
   const modeOptions = [
     ...coreModes.map((m) => ({ value: m.id, label: m.name })),
     // Absent for a language with no module, rather than present and empty.
-    ...(natModes.length
-      ? [{ group: 'Naturalness — sound native', options: natModes.map((m) => ({ value: m.id, label: m.name })) }]
-      : []),
+    ...drillGroups.map((g) => ({ group: g.label, options: g.modes.map((m) => ({ value: m.id, label: m.name })) })),
   ];
   const topics = ['general', 'business', 'travel', 'culture', 'technology', 'food', 'sports', 'health', 'education', 'entertainment'];
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -1343,8 +1361,10 @@ Format:
                       ) : (
                         <div style={{ background: 'var(--field)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 12px' }}>
                           <div style={{ font: "400 12px/1.5 'IBM Plex Sans'", color: 'var(--soft)' }}>
-                            {practiceMode === 'nat:mixed'
-                              ? 'Drills drawn from every area, one at a time.'
+                            {practiceMode.endsWith(':mixed')
+                              ? (drillGroupOf(practiceMode) === 'business'
+                                ? 'Drills drawn from every Business pack, one at a time.'
+                                : 'Drills drawn from every area, one at a time.')
                               : (nat.CATEGORY_BY_ID[practiceMode.slice(4)]?.blurb || '')}
                           </div>
                           <div style={{ font: "400 11px 'IBM Plex Sans'", color: 'var(--faint)', marginTop: 7 }}>
@@ -1752,7 +1772,13 @@ Format:
                       </div>
                     </div>
 
-                    {rows.sort((a, b) => (a.reach.pct ?? 101) - (b.reach.pct ?? 101)).map((r) => (
+                    {nat.GROUPS.map((g) => ({ g, groupRows: rows.filter((r) => (nat.CATEGORY_BY_ID[r.categoryId]?.group || 'naturalness') === g.id) }))
+                      .filter(({ groupRows }) => groupRows.length)
+                      .flatMap(({ g, groupRows }) => [
+                        <div key={`h-${g.id}`} style={{ font: "500 10.5px/1 'IBM Plex Mono'", letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)', padding: '16px 0 4px' }}>
+                          {g.id === 'business' ? 'Business' : 'Sounding native'}
+                        </div>,
+                        ...groupRows.sort((a, b) => (a.reach.pct ?? 101) - (b.reach.pct ?? 101)).map((r) => (
                       <div key={r.categoryId} style={{ padding: '11px 0', borderTop: '1px solid var(--border-2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 7 }}>
                           <span style={{ font: "600 13.5px 'IBM Plex Sans'", color: 'var(--ink)' }}>{r.label}</span>
@@ -1769,7 +1795,8 @@ Format:
                           }} />
                         </div>
                       </div>
-                    ))}
+                        )),
+                      ])}
                   </div>
                 );
               })()}

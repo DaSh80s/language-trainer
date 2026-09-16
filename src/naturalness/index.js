@@ -7,7 +7,7 @@
  * natural boundary for the split.
  */
 
-export { CATEGORIES, CATEGORY_BY_ID, CATEGORY_IDS, FORMATS } from './categories.js';
+export { CATEGORIES, CATEGORY_BY_ID, CATEGORY_IDS, FORMATS, GROUPS, categoryIdsInGroup } from './categories.js';
 export * as scoring from './scoring.js';
 export { pickNext, present, probesReach, buildJudgeRequest, parseJudgement, hintFor, JUDGE_MODEL } from './drillEngine.js';
 

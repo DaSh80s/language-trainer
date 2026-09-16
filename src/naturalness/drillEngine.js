@@ -95,7 +95,13 @@ export function present(item) {
       };
     case 'react':
       return {
-        instruction: 'Reply in German — one to three words.',
+        // Most reactions are one to three words, but a few (buying thinking time,
+        // closing a meeting) are naturally a short sentence. Promising "one to
+        // three words" and then expecting a sentence is exactly the kind of
+        // unclear instruction that leaves the learner guessing.
+        instruction: String(item.target || '').trim().split(/\s+/).length > 3
+          ? 'Reply in German — one short sentence.'
+          : 'Reply in German — one to three words.',
         stimulus: p.line,
         extras: p.situation ? [{ label: 'Situation', value: p.situation }] : [],
         inputHint: 'Your reaction',
@@ -106,6 +112,20 @@ export function present(item) {
         stimulus: p.blunt,
         extras: [{ label: 'Pitch it as', value: p.level }],
         inputHint: 'Your version',
+      };
+    case 'recap':
+      return {
+        instruction: 'Summarise this back to them in German before moving on — every key fact, in your own words.',
+        stimulus: p.said,
+        extras: p.situation ? [{ label: 'Situation', value: p.situation }] : [],
+        inputHint: 'Your summary',
+      };
+    case 'clarify':
+      return {
+        instruction: 'Ask one clarifying question in German that pins down what is unclear below.',
+        stimulus: p.said,
+        extras: [{ label: 'Unclear', value: p.unclear }],
+        inputHint: 'Your question',
       };
     default:
       return { instruction: 'Answer:', stimulus: item.target, extras: [], inputHint: 'Answer' };
@@ -136,6 +156,11 @@ const DEVICE = {
   repair: 'a repair formula that keeps the sentence alive',
   collocations: 'the conventional verb for that noun, which is probably not machen',
   interference: 'a German structure that does not mirror the English one',
+  calls: 'a phone-call formula — for checking understanding, agreeing next steps or closing',
+  meetings: 'a meeting phrase — for taking the floor, recording a decision or moving on',
+  numbers: 'the precise term for the figure, and every detail pinned down',
+  candidates: 'a complete, polished question rather than a clipped one',
+  email: 'the courtesy formula business email expects',
 };
 
 export function hintFor(item, level = 1) {
@@ -208,6 +233,15 @@ const JUDGE_SCHEMA = {
  * Build the request body for judging one answer.
  * Posted to /api/chat, which forwards it to the Messages API untouched.
  */
+/** Business categories are judged on professional fit as well as naturalness. */
+const CATEGORY_GROUP_HINT = {
+  calls: 'Context: a professional phone call in Switzerland. Judge whether it sounds like a competent professional, not just a native speaker.',
+  meetings: 'Context: a business meeting in Switzerland. Judge professional fit as well as naturalness.',
+  numbers: 'Context: discussing figures and employment terms in Switzerland. Precision matters as much as naturalness.',
+  candidates: 'Context: a recruiter qualifying a candidate by phone in Switzerland. Questions should be complete and polished, but not stiff or over-long — and must not lean on the same filler (e.g. grundsätzlich) every time.',
+  email: 'Context: Swiss business email. Judge courtesy and naturalness of written business German; Swiss spelling (ss, never ß).',
+};
+
 export function buildJudgeRequest(item, answer, elapsedSec) {
   const p = present(item);
   const overTime = item.timeLimitSec && elapsedSec > item.timeLimitSec;
@@ -218,6 +252,13 @@ export function buildJudgeRequest(item, answer, elapsedSec) {
     ...(p.extras || []).map((e) => `  ${e.label}: ${e.value}`),
     `Expected natural answer: ${item.target}`,
     item.note ? `Teaching note: ${item.note}` : null,
+    item.mustInclude?.length
+      ? `This is a RECAP. Key facts the summary must carry: ${item.mustInclude.join('; ')}. A missing or distorted fact means landed is false, and the explanation must name which fact. reached = they actually summarised rather than replying or asking a new question.`
+      : null,
+    item.mustPin?.length
+      ? `This is a CLARIFYING QUESTION. It must pin down: ${item.mustPin.join('; ')}. Anything left open means landed is false — name what was missed. reached = they asked a clarifying question at all. A question that covers everything in a different, natural way is fully correct.`
+      : null,
+    CATEGORY_GROUP_HINT[item.categoryId] || null,
     item.timeLimitSec
       ? `This item is time-pressured (${item.timeLimitSec}s limit). They answered in ${Math.round(elapsedSec)}s${overTime ? ' — over the limit' : ''}. Judge the German, not the clock, but a fluent-sounding rescue matters more here than a perfectly polished one.`
       : null,
