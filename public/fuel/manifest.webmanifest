@@ -1,0 +1,13 @@
+{
+  "name": "Fuel · food & weight log",
+  "short_name": "Fuel",
+  "description": "A private food and weight log that lives entirely in this browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f1e7",
+  "theme_color": "#f6f1e7",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

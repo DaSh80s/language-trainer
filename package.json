@@ -7,7 +7,7 @@
     "dev": "vercel dev",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/naturalness.test.mjs && esbuild tests/render.test.jsx --bundle --platform=node --format=cjs --loader:.js=jsx --define:import.meta.env.VITE_APP_PASSWORD=undefined --log-level=warning --outfile=node_modules/.cache/render.test.cjs && node node_modules/.cache/render.test.cjs"
+    "test": "node tests/naturalness.test.mjs && node tests/fuel.test.mjs && esbuild tests/render.test.jsx --bundle --platform=node --format=cjs --loader:.js=jsx --define:import.meta.env.VITE_APP_PASSWORD=undefined --log-level=warning --outfile=node_modules/.cache/render.test.cjs && node node_modules/.cache/render.test.cjs"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",

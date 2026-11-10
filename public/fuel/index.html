@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Fuel · food & weight log</title>
+<meta name="description" content="A private food and weight log that lives entirely in this browser." />
+<meta name="theme-color" content="#f6f1e7" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/svg+xml" href="icon.svg" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Fuel" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f6f1e7; --surface: #fffdf8; --ink: #2a2420; --muted: #75695f; --line: #e4dccd;
+    --accent: #b8532f; --accent-ink: #fffdf8; --good: #3b7546; --over: #a8401f; --track: #ebe3d3;
+    --serif: 'Spectral', Georgia, 'Times New Roman', serif;
+    --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  :root[data-theme="dark"] {
+    --bg: #15140f; --surface: #1f1d17; --ink: #f0ecdf; --muted: #a8a190; --line: #36332b;
+    --accent: #c8f03c; --accent-ink: #15140f; --good: #9ad27a; --over: #ff9a76; --track: #2c2a23;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15140f; --surface: #1f1d17; --ink: #f0ecdf; --muted: #a8a190; --line: #36332b;
+      --accent: #c8f03c; --accent-ink: #15140f; --good: #9ad27a; --over: #ff9a76; --track: #2c2a23;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.45; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
+  header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0 14px; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: 28px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 20px; margin: 0 0 10px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .between { justify-content: space-between; }
+  .grow { flex: 1; min-width: 0; }
+
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 14px; min-height: 44px; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.ghost { background: transparent; }
+  button.icon { min-width: 44px; padding: 8px; font-size: 18px; line-height: 1; }
+  button.danger { color: var(--over); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input, select { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+  .fields.four { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 420px) { .fields.four { grid-template-columns: repeat(2, 1fr); } }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 6px 0; }
+
+  .daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .daynav .label { flex: 1; text-align: center; font-family: var(--serif); font-size: 19px; font-weight: 500; }
+  .big { font-family: var(--serif); font-size: 44px; font-weight: 600; line-height: 1.05; letter-spacing: -0.02em; }
+  .big small { font-family: var(--sans); font-size: 15px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+  .bar { position: relative; height: 10px; background: var(--track); border-radius: 99px; margin: 8px 0 4px; }
+  .bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--accent); }
+  .bar.over > i { background: var(--over); }
+  .bar.good > i { background: var(--good); }
+  .bar > b { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); opacity: 0.55; }
+  .macros { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .macros span b { color: var(--ink); font-family: var(--mono); font-weight: 500; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip { min-height: 36px; padding: 6px 12px; border-radius: 99px; font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  ul.list li:first-child { border-top: 0; }
+  .entry { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 0; min-height: 0; border-radius: 6px; }
+  .entry .name { display: block; overflow-wrap: anywhere; }
+  .empty { text-align: center; padding: 18px 8px; color: var(--muted); }
+
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .stat .v { font-family: var(--serif); font-size: 26px; font-weight: 600; line-height: 1.15; }
+  .stat .v small { font-family: var(--sans); font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 5px; }
+  .legend i.dash { border-top-style: dashed; }
+  .note { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; margin: 12px 0 0; font-size: 14px; }
+
+  nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
+  nav.tabs div { max-width: 640px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+  nav.tabs button { border: 0; border-radius: 0; background: none; min-height: 56px; font-size: 13px; color: var(--muted); border-top: 2px solid transparent; }
+  nav.tabs button[aria-current="page"] { color: var(--ink); font-weight: 600; border-top-color: var(--accent); }
+  .toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 99px; font-size: 14px; z-index: 9; max-width: calc(100% - 32px); }
+  .stack > * + * { margin-top: 10px; }
+  .btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Fuel</h1>
+    <span class="eyebrow" id="streak"></span>
+  </header>
+  <main id="view"></main>
+</div>
+<nav class="tabs" aria-label="Sections"><div id="tabs"></div></nav>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+/*LOGIC-START*/
+// Pure functions only between these markers: no DOM, no storage. The test suite
+// evaluates this block on its own.
+var Logic = (function () {
+  var KCAL_PER_KG = 7700;
+  var MACROS = ['kcal', 'protein', 'carbs', 'fat', 'fibre', 'sugar'];
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  /** Local calendar day as YYYY-MM-DD. Never via toISOString, which is UTC and
+   *  would file a late-evening meal under the wrong day east of Greenwich. */
+  function dayKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function parseDay(key) { var p = key.split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12); }
+  function addDays(key, n) { var d = parseDay(key); d.setDate(d.getDate() + n); return dayKey(d); }
+  function daysBetween(a, b) { return Math.round((parseDay(b) - parseDay(a)) / 86400000); }
+
+  /** Accepts "80,5", "2'600", "2 600", "1.5". Returns null for anything else. */
+  function parseNum(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    var s = String(v == null ? '' : v).trim().replace(/['’\s]/g, '').replace(',', '.');
+    if (s === '' || !/^-?\d*\.?\d+$|^-?\d+\.$/.test(s)) return null;
+    var n = parseFloat(s);
+    return isFinite(n) ? n : null;
+  }
+
+  function entryTotal(e, key) { return (e[key] || 0) * (e.qty || 1); }
+
+  function dayTotals(entries, day) {
+    var t = { entries: 0 };
+    MACROS.forEach(function (k) { t[k] = 0; });
+    entries.forEach(function (e) {
+      if (e.day !== day) return;
+      t.entries++;
+      MACROS.forEach(function (k) { t[k] += entryTotal(e, k); });
+    });
+    return t;
+  }
+
+  /** Target in force: an explicit one, else maintenance minus 400, else null. */
+  function targetKcal(settings) {
+    if (settings.targetKcal) return settings.targetKcal;
+    if (settings.maintenanceKcal) return settings.maintenanceKcal - 400;
+    return null;
+  }
+
+  /**
+   * Seven days ending on endDay. Averages are over days that HAVE entries:
+   * counting an unlogged day as zero would flatter the deficit.
+   */
+  function weekSummary(entries, endDay, settings) {
+    var days = [];
+    for (var i = 6; i >= 0; i--) {
+      var day = addDays(endDay, -i);
+      var t = dayTotals(entries, day);
+      t.day = day;
+      days.push(t);
+    }
+    var logged = days.filter(function (d) { return d.entries > 0; });
+    var n = logged.length;
+    function avg(k) { return n ? logged.reduce(function (s, d) { return s + d[k]; }, 0) / n : null; }
+    var avgKcal = avg('kcal');
+    var balance = (n && settings.maintenanceKcal) ? avgKcal - settings.maintenanceKcal : null;
+    return {
+      days: days, daysLogged: n, avgKcal: avgKcal, avgProtein: avg('protein'),
+      balanceKcal: balance,
+      expectedKgPerWeek: balance === null ? null : balance * 7 / KCAL_PER_KG
+    };
+  }
+
+  /** One reading per day, oldest first. */
+  function sortedWeights(weights) {
+    return weights.slice().sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; });
+  }
+
+  /**
+   * Least-squares slope over the window, in kg per week. A single noisy
+   * reading cannot swing it the way "last minus first" can. Returns null with
+   * fewer than three readings or less than a week between first and last.
+   */
+  function weightTrend(weights, endDay, windowDays) {
+    windowDays = windowDays || 28;
+    var start = addDays(endDay, -(windowDays - 1));
+    var pts = sortedWeights(weights).filter(function (w) { return w.day >= start && w.day <= endDay; });
+    if (pts.length < 3) return null;
+    var span = daysBetween(pts[0].day, pts[pts.length - 1].day);
+    if (span < 7) return null;
+    var xs = pts.map(function (p) { return daysBetween(start, p.day); });
+    var mx = xs.reduce(function (s, x) { return s + x; }, 0) / xs.length;
+    var my = pts.reduce(function (s, p) { return s + p.kg; }, 0) / pts.length;
+    var num = 0, den = 0;
+    for (var i = 0; i < pts.length; i++) { num += (xs[i] - mx) * (pts[i].kg - my); den += (xs[i] - mx) * (xs[i] - mx); }
+    if (!den) return null;
+    return { kgPerWeek: num / den * 7, readings: pts.length, spanDays: span };
+  }
+
+  /** Mean of the readings in the seven days ending on endDay, or null. */
+  function weekAverageWeight(weights, endDay) {
+    var start = addDays(endDay, -6);
+    var pts = weights.filter(function (w) { return w.day >= start && w.day <= endDay; });
+    if (!pts.length) return null;
+    return pts.reduce(function (s, p) { return s + p.kg; }, 0) / pts.length;
+  }
+
+  /** Consecutive logged days ending today, or yesterday if today is still empty. */
+  function streak(entries, today) {
+    var have = {};
+    entries.forEach(function (e) { have[e.day] = true; });
+    var day = have[today] ? today : addDays(today, -1);
+    var n = 0;
+    while (have[day]) { n++; day = addDays(day, -1); }
+    return n;
+  }
+
+  /** Remembered foods, most used first, recency breaking ties. */
+  function topFoods(foods, limit) {
+    return Object.keys(foods).map(function (k) { return foods[k]; })
+      .sort(function (a, b) { return (b.uses - a.uses) || (a.last < b.last ? 1 : -1); })
+      .slice(0, limit);
+  }
+
+  function csvCell(v) {
+    var s = String(v == null ? '' : v);
+    // A leading = + - @ would be run as a formula by a spreadsheet.
+    if (/^[=+\-@]/.test(s) && isNaN(Number(s))) s = "'" + s;
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  /** Column names match the Notion Food Diary, so the file imports straight in. */
+  function foodCsv(entries) {
+    var rows = [['Name', 'Logged for', 'Calories', 'Protein (g)', 'Fibre (g)', 'Fat (g)', 'Carbs (g)', 'Sugar (g)']];
+    entries.slice().sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; }).forEach(function (e) {
+      var name = e.qty && e.qty !== 1 ? e.name + ' ×' + e.qty : e.name;
+      rows.push([name, e.day].concat(['kcal', 'protein', 'fibre', 'fat', 'carbs', 'sugar'].map(function (k) { return round1(entryTotal(e, k)); })));
+    });
+    return rows.map(function (r) { return r.map(csvCell).join(','); }).join('\n') + '\n';
+  }
+
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  /** Titles follow the existing Notion convention: "80.8 kg - 28 August 2026". */
+  function weightCsv(weights) {
+    var rows = [['Name', 'Number']];
+    sortedWeights(weights).forEach(function (w) {
+      var d = parseDay(w.day);
+      rows.push([w.kg + ' kg - ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(), w.kg]);
+    });
+    return rows.map(function (r) { return r.map(csvCell).join(','); }).join('\n') + '\n';
+  }
+
+  /** Checks a backup before it is allowed to replace what is stored. */
+  function validateBackup(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return 'Not a Fuel backup file.';
+    if (!Array.isArray(data.entries) || !Array.isArray(data.weights)) return 'Not a Fuel backup file.';
+    var dayOk = function (d) { return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d); };
+    for (var i = 0; i < data.entries.length; i++) {
+      var e = data.entries[i];
+      if (!e || typeof e.name !== 'string' || !dayOk(e.day) || typeof e.kcal !== 'number') return 'Entry ' + (i + 1) + ' in the file is malformed.';
+    }
+    for (var j = 0; j < data.weights.length; j++) {
+      var w = data.weights[j];
+      if (!w || !dayOk(w.day) || typeof w.kg !== 'number') return 'Weight ' + (j + 1) + ' in the file is malformed.';
+    }
+    return null;
+  }
+
+  return {
+    KCAL_PER_KG: KCAL_PER_KG, MACROS: MACROS, dayKey: dayKey, parseDay: parseDay, addDays: addDays,
+    daysBetween: daysBetween, parseNum: parseNum, entryTotal: entryTotal, dayTotals: dayTotals,
+    targetKcal: targetKcal, weekSummary: weekSummary, sortedWeights: sortedWeights,
+    weightTrend: weightTrend, weekAverageWeight: weekAverageWeight, streak: streak,
+    topFoods: topFoods, foodCsv: foodCsv, weightCsv: weightCsv, validateBackup: validateBackup
+  };
+})();
+/*LOGIC-END*/
+
+(function () {
+  var KEY = 'fuel-v1';
+  var L = Logic;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function blank() { return { version: 1, settings: { maintenanceKcal: null, targetKcal: null, proteinG: null, goalKg: null, theme: 'auto' }, entries: [], weights: [], foods: {} }; }
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return blank();
+      var d = JSON.parse(raw), b = blank();
+      return { version: 1, settings: Object.assign(b.settings, d.settings || {}), entries: d.entries || [], weights: d.weights || [], foods: d.foods || {} };
+    } catch (e) { return blank(); }
+  }
+  var saveFailed = false;
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); saveFailed = false; }
+    catch (e) { if (!saveFailed) toast('Could not save — this browser is blocking storage.'); saveFailed = true; }
+  }
+
+  var state = load();
+  var ui = { tab: 'today', day: L.dayKey(new Date()), editing: null, weekEnd: null };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function fmt(n, digits) { return n == null ? '–' : Number(n).toLocaleString('en-GB', { maximumFractionDigits: digits || 0, minimumFractionDigits: digits || 0 }); }
+  function signed(n, digits) { return n == null ? '–' : (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n), digits); }
+  function today() { return L.dayKey(new Date()); }
+  function dayLabel(key, long) {
+    var t = today();
+    if (!long) { if (key === t) return 'Today'; if (key === L.addDays(t, -1)) return 'Yesterday'; }
+    return L.parseDay(key).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  var toastTimer;
+  function toast(msg) { var t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 2600); }
+  function applyTheme() {
+    var th = state.settings.theme;
+    if (th === 'light' || th === 'dark') document.documentElement.setAttribute('data-theme', th);
+    else document.documentElement.removeAttribute('data-theme');
+  }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // ---------- Today ----------
+  function viewToday() {
+    var s = state.settings, t = L.dayTotals(state.entries, ui.day), target = L.targetKcal(s);
+    var entries = state.entries.filter(function (e) { return e.day === ui.day; });
+    var h = '';
+    h += '<div class="daynav"><button class="icon" data-act="day" data-n="-1" aria-label="Previous day">‹</button>'
+      + '<div class="label">' + esc(dayLabel(ui.day)) + (ui.day === today() || ui.day === L.addDays(today(), -1) ? ' <span class="muted small">' + esc(dayLabel(ui.day, true)) + '</span>' : '') + '</div>'
+      + '<button class="icon" data-act="day" data-n="1" aria-label="Next day"' + (ui.day >= today() ? ' disabled' : '') + '>›</button></div>';
+
+    h += '<section class="card">';
+    if (target) {
+      var left = target - t.kcal, over = left < 0;
+      h += '<div class="eyebrow">' + (over ? 'Over target' : 'Left today') + '</div>'
+        + '<div class="big" style="' + (over ? 'color:var(--over)' : '') + '">' + fmt(Math.abs(left)) + '<small>kcal</small></div>';
+      var scale = Math.max(target, s.maintenanceKcal || 0, t.kcal) * 1.04;
+      h += '<div class="bar' + (over ? ' over' : '') + '" role="img" aria-label="' + fmt(t.kcal) + ' of ' + fmt(target) + ' kcal"><i style="width:' + Math.min(100, t.kcal / scale * 100) + '%"></i>'
+        + '<b style="left:' + (target / scale * 100) + '%" title="Target"></b></div>'
+        + '<div class="row between small muted"><span><span class="num">' + fmt(t.kcal) + '</span> eaten</span><span>target <span class="num">' + fmt(target) + '</span>'
+        + (s.maintenanceKcal ? ' · maintenance <span class="num">' + fmt(s.maintenanceKcal) + '</span>' : '') + '</span></div>';
+    } else {
+      h += '<div class="eyebrow">Eaten</div><div class="big">' + fmt(t.kcal) + '<small>kcal</small></div>'
+        + '<p class="small muted" style="margin:8px 0 0">Add your maintenance calories in <button class="ghost" data-act="tab" data-tab="settings" style="min-height:0;padding:2px 8px">Settings</button> to see what is left each day.</p>';
+    }
+    if (s.proteinG) {
+      var pp = Math.min(100, t.protein / s.proteinG * 100);
+      h += '<div style="margin-top:14px"><div class="row between small"><span>Protein</span><span class="num">' + fmt(t.protein) + ' / ' + fmt(s.proteinG) + ' g</span></div>'
+        + '<div class="bar' + (t.protein >= s.proteinG ? ' good' : '') + '"><i style="width:' + pp + '%"></i></div></div>';
+    }
+    h += '<div class="macros">' + (s.proteinG ? '' : '<span>Protein <b>' + fmt(t.protein) + ' g</b></span>')
+      + '<span>Carbs <b>' + fmt(t.carbs) + ' g</b></span><span>Fat <b>' + fmt(t.fat) + ' g</b></span><span>Fibre <b>' + fmt(t.fibre) + ' g</b></span><span>Sugar <b>' + fmt(t.sugar) + ' g</b></span></div>';
+    h += '</section>';
+
+    // Add / edit form
+    var ed = ui.editing ? state.entries.filter(function (e) { return e.id === ui.editing; })[0] : null;
+    var v = function (k) { return ed && ed[k] != null && ed[k] !== 0 ? esc(ed[k]) : ''; };
+    h += '<section class="card"><h2>' + (ed ? 'Edit entry' : 'Add food') + '</h2><form id="addform" autocomplete="off">'
+      + '<label for="f-name">What</label><input id="f-name" list="foodlist" required maxlength="80" placeholder="e.g. Skyr 150 g" value="' + (ed ? esc(ed.name) : '') + '" />'
+      + '<datalist id="foodlist">' + Object.keys(state.foods).map(function (k) { return '<option value="' + esc(state.foods[k].name) + '">'; }).join('') + '</datalist>'
+      + '<div class="fields"><div><label for="f-kcal">kcal</label><input id="f-kcal" inputmode="decimal" required value="' + (ed ? esc(ed.kcal) : '') + '" /></div>'
+      + '<div><label for="f-protein">Protein g</label><input id="f-protein" inputmode="decimal" value="' + v('protein') + '" /></div>'
+      + '<div><label for="f-qty">Portions</label><input id="f-qty" inputmode="decimal" value="' + (ed ? esc(ed.qty || 1) : '1') + '" /></div></div>'
+      + '<details' + (ed && (ed.carbs || ed.fat || ed.fibre || ed.sugar) ? ' open' : '') + '><summary>Carbs, fat, fibre, sugar</summary><div class="fields four">'
+      + ['carbs', 'fat', 'fibre', 'sugar'].map(function (k) { return '<div><label for="f-' + k + '">' + k.charAt(0).toUpperCase() + k.slice(1) + ' g</label><input id="f-' + k + '" inputmode="decimal" value="' + v(k) + '" /></div>'; }).join('')
+      + '</div></details>'
+      + '<p class="small muted" style="margin:10px 0">Values are for one portion; the log multiplies by portions.</p>'
+      + '<div class="btnrow"><button class="primary grow" type="submit">' + (ed ? 'Save changes' : 'Add') + '</button>'
+      + (ed ? '<button type="button" data-act="cancel-edit">Cancel</button>' : '') + '</div></form>';
+    var top = ed ? [] : L.topFoods(state.foods, 8);
+    if (top.length) {
+      h += '<div class="eyebrow" style="margin-top:16px">Add again</div><div class="chips">'
+        + top.map(function (f) { return '<button class="chip" data-act="quick" data-food="' + esc(f.name.toLowerCase()) + '" title="' + esc(f.name) + ' · ' + fmt(f.kcal) + ' kcal">' + esc(f.name) + ' <span class="muted num">' + fmt(f.kcal) + '</span></button>'; }).join('') + '</div>';
+    }
+    h += '</section>';
+
+    h += '<section class="card"><h2>' + esc(dayLabel(ui.day)) + '’s log</h2>';
+    if (!entries.length) {
+      var prev = L.addDays(ui.day, -1), hasPrev = state.entries.some(function (e) { return e.day === prev; });
+      h += '<div class="empty">Nothing logged yet.' + (hasPrev ? '<div style="margin-top:10px"><button data-act="copy-prev">Copy ' + (ui.day === today() ? 'yesterday' : 'the day before') + '</button></div>' : '') + '</div>';
+    } else {
+      h += '<ul class="list">' + entries.map(function (e) {
+        return '<li><button class="entry" data-act="edit" data-id="' + esc(e.id) + '" aria-label="Edit ' + esc(e.name) + '"><span class="name">' + esc(e.name) + (e.qty && e.qty !== 1 ? ' <span class="muted">×' + esc(e.qty) + '</span>' : '') + '</span>'
+          + '<span class="small muted num">' + fmt(L.entryTotal(e, 'kcal')) + ' kcal' + (e.protein ? ' · ' + fmt(L.entryTotal(e, 'protein')) + ' g protein' : '') + '</span></button>'
+          + '<button class="icon ghost" data-act="del" data-id="' + esc(e.id) + '" aria-label="Delete ' + esc(e.name) + '">×</button></li>';
+      }).join('') + '</ul>';
+    }
+    h += '</section>';
+    return h;
+  }
+
+  function readForm() {
+    var name = $('f-name').value.trim();
+    var kcal = L.parseNum($('f-kcal').value), qty = L.parseNum($('f-qty').value || '1');
+    if (!name) return { error: 'Give it a name.' };
+    if (kcal === null || kcal < 0) return { error: 'Calories must be a number.' };
+    if (qty === null || qty <= 0) return { error: 'Portions must be more than zero.' };
+    var e = { name: name, kcal: kcal, qty: qty };
+    var bad = null;
+    ['protein', 'carbs', 'fat', 'fibre', 'sugar'].forEach(function (k) {
+      var raw = $('f-' + k).value.trim();
+      if (raw === '') { e[k] = 0; return; }
+      var n = L.parseNum(raw);
+      if (n === null || n < 0) bad = k; else e[k] = n;
+    });
+    if (bad) return { error: bad.charAt(0).toUpperCase() + bad.slice(1) + ' must be a number.' };
+    return { entry: e };
+  }
+  function remember(e) {
+    var k = e.name.toLowerCase(), old = state.foods[k];
+    state.foods[k] = { name: e.name, kcal: e.kcal, protein: e.protein, carbs: e.carbs, fat: e.fat, fibre: e.fibre, sugar: e.sugar, uses: (old ? old.uses : 0) + 1, last: Date.now() };
+  }
+  function addEntry(e, day) {
+    var row = Object.assign({ id: uid(), day: day }, e);
+    state.entries.push(row);
+    return row;
+  }
+
+  // ---------- Weight ----------
+  function viewWeight() {
+    var s = state.settings, ws = L.sortedWeights(state.weights), t = today();
+    var latest = ws[ws.length - 1], avg = L.weekAverageWeight(ws, t), trend = L.weightTrend(ws, t, 28);
+    var h = '<section class="card"><h2>Log weight</h2><form id="wform" class="row" style="align-items:flex-end">'
+      + '<div class="grow"><label for="w-kg">kg</label><input id="w-kg" inputmode="decimal" required placeholder="' + (latest ? esc(latest.kg) : '80.0') + '" /></div>'
+      + '<div class="grow" style="flex:1.5"><label for="w-day">Date</label><input id="w-day" type="date" max="' + t + '" value="' + t + '" /></div>'
+      + '<button class="primary" type="submit">Save</button></form></section>';
+
+    h += '<section class="card"><div class="stats">'
+      + '<div class="stat"><div class="eyebrow">Latest</div><div class="v">' + (latest ? fmt(latest.kg, 1) + '<small>kg · ' + esc(dayLabel(latest.day)) + '</small>' : '–') + '</div></div>'
+      + '<div class="stat"><div class="eyebrow">7-day average</div><div class="v">' + (avg === null ? '–' : fmt(avg, 2) + '<small>kg</small>') + '</div></div>'
+      + '<div class="stat"><div class="eyebrow">Trend · 28 days</div><div class="v">' + (trend ? signed(trend.kgPerWeek, 2) + '<small>kg / week</small>' : '–') + '</div></div>'
+      + '<div class="stat"><div class="eyebrow">To goal</div><div class="v">' + (s.goalKg && latest ? signed((avg === null ? latest.kg : avg) - s.goalKg, 1) + '<small>kg vs ' + fmt(s.goalKg, 1) + '</small>' : '–') + '</div></div>'
+      + '</div>';
+    if (!trend) h += '<p class="small muted" style="margin:12px 0 0">The trend needs at least three readings spread over a week.</p>';
+    else if (s.goalKg && avg !== null) {
+      var gap = s.goalKg - avg;
+      if (Math.abs(gap) < 0.2) h += '<p class="note">You are at your goal weight.</p>';
+      else if (gap * trend.kgPerWeek > 0 && Math.abs(trend.kgPerWeek) >= 0.05) h += '<p class="note">At this rate you reach ' + fmt(s.goalKg, 1) + ' kg in about ' + fmt(Math.ceil(gap / trend.kgPerWeek)) + ' week' + (Math.ceil(gap / trend.kgPerWeek) === 1 ? '' : 's') + '.</p>';
+      else h += '<p class="note">The trend is not currently heading towards ' + fmt(s.goalKg, 1) + ' kg.</p>';
+    }
+    h += '</section>';
+
+    if (ws.length >= 2) h += '<section class="card"><h2>Last 90 days</h2>' + weightChart(ws, s.goalKg) + '</section>';
+
+    h += '<section class="card"><h2>Readings</h2>';
+    if (!ws.length) h += '<div class="empty">No readings yet.</div>';
+    else h += '<ul class="list">' + ws.slice().reverse().slice(0, 30).map(function (w) {
+      return '<li><span class="grow">' + esc(dayLabel(w.day, true)) + ' <span class="muted small">' + L.parseDay(w.day).getFullYear() + '</span></span><span class="num">' + fmt(w.kg, 1) + ' kg</span>'
+        + '<button class="icon ghost" data-act="del-weight" data-day="' + esc(w.day) + '" aria-label="Delete reading for ' + esc(dayLabel(w.day, true)) + '">×</button></li>';
+    }).join('') + '</ul>' + (ws.length > 30 ? '<p class="small muted">Showing the latest 30 of ' + ws.length + '. Export has them all.</p>' : '');
+    h += '</section>';
+    return h;
+  }
+
+  function weightChart(ws, goal) {
+    var end = today(), start = L.addDays(end, -89);
+    var pts = ws.filter(function (w) { return w.day >= start; });
+    if (pts.length < 2) return '<div class="empty">Not enough recent readings to draw.</div>';
+    var span = Math.max(1, L.daysBetween(pts[0].day, end)), x0 = pts[0].day;
+    var vals = pts.map(function (p) { return p.kg; });
+    if (goal) vals.push(goal);
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var padY = Math.max(0.5, (hi - lo) * 0.12); lo -= padY; hi += padY;
+    var W = 360, H = 210, pl = 40, pr = 8, pt = 10, pb = 24;
+    var X = function (day) { return pl + L.daysBetween(x0, day) / span * (W - pl - pr); };
+    var Y = function (kg) { return pt + (hi - kg) / (hi - lo) * (H - pt - pb); };
+    var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Weight over the last 90 days">';
+    for (var i = 0; i <= 3; i++) {
+      var kg = lo + (hi - lo) * i / 3;
+      svg += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + Y(kg) + '" y2="' + Y(kg) + '" stroke="var(--line)"/>'
+        + '<text x="' + (pl - 6) + '" y="' + (Y(kg) + 4) + '" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--mono)">' + kg.toFixed(1) + '</text>';
+    }
+    if (goal) svg += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + Y(goal) + '" y2="' + Y(goal) + '" stroke="var(--good)" stroke-width="2" stroke-dasharray="6 5"/>';
+    // Rolling 7-day mean, drawn through every reading day.
+    var avgPath = pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p.day).toFixed(1) + ' ' + Y(L.weekAverageWeight(pts, p.day)).toFixed(1); }).join(' ');
+    svg += '<path d="' + avgPath + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>';
+    pts.forEach(function (p) { svg += '<circle cx="' + X(p.day).toFixed(1) + '" cy="' + Y(p.kg).toFixed(1) + '" r="3" fill="var(--surface)" stroke="var(--muted)" stroke-width="1.5"><title>' + esc(dayLabel(p.day, true)) + ': ' + p.kg + ' kg</title></circle>'; });
+    svg += '<text x="' + pl + '" y="' + (H - 6) + '" font-size="12" fill="var(--muted)">' + esc(dayLabel(x0, true)) + '</text>'
+      + '<text x="' + (W - pr) + '" y="' + (H - 6) + '" font-size="12" fill="var(--muted)" text-anchor="end">Today</text></svg>';
+    return svg + '<div class="legend"><span><i style="border-color:var(--accent)"></i>7-day average</span><span>○ readings</span>' + (goal ? '<span><i class="dash" style="border-color:var(--good)"></i>goal</span>' : '') + '</div>';
+  }
+
+  // ---------- Week ----------
+  function viewWeek() {
+    var s = state.settings, end = ui.weekEnd || today(), w = L.weekSummary(state.entries, end, s), target = L.targetKcal(s);
+    var trend = L.weightTrend(state.weights, end, 28);
+    var h = '<div class="daynav"><button class="icon" data-act="week" data-n="-7" aria-label="Previous week">‹</button>'
+      + '<div class="label">' + esc(dayLabel(L.addDays(end, -6), true)) + ' – ' + esc(dayLabel(end, true)) + '</div>'
+      + '<button class="icon" data-act="week" data-n="7" aria-label="Next week"' + (end >= today() ? ' disabled' : '') + '>›</button></div>';
+
+    h += '<section class="card"><h2>Calories by day</h2>' + weekChart(w, target, s.maintenanceKcal) + '</section>';
+
+    h += '<section class="card"><div class="stats">'
+      + '<div class="stat"><div class="eyebrow">Average intake</div><div class="v">' + (w.daysLogged ? fmt(w.avgKcal) + '<small>kcal</small>' : '–') + '</div></div>'
+      + '<div class="stat"><div class="eyebrow">Days logged</div><div class="v">' + w.daysLogged + '<small>of 7</small></div></div>'
+      + '<div class="stat"><div class="eyebrow">Average protein</div><div class="v">' + (w.daysLogged ? fmt(w.avgProtein) + '<small>g' + (s.proteinG ? ' of ' + fmt(s.proteinG) : '') + '</small>' : '–') + '</div></div>'
+      + '<div class="stat"><div class="eyebrow">Vs maintenance</div><div class="v"' + (w.balanceKcal > 0 ? ' style="color:var(--over)"' : '') + '>' + (w.balanceKcal === null ? '–' : signed(w.balanceKcal) + '<small>kcal / day</small>') + '</div></div>'
+      + '</div>';
+    if (w.daysLogged && w.daysLogged < 7) h += '<p class="small muted" style="margin:12px 0 0">Averages cover the ' + w.daysLogged + ' logged day' + (w.daysLogged === 1 ? '' : 's') + ' only. Unlogged days are left out, not counted as zero.</p>';
+    if (!s.maintenanceKcal) h += '<p class="small muted" style="margin:12px 0 0">Set maintenance calories in Settings to see your balance.</p>';
+    h += '</section>';
+
+    if (w.expectedKgPerWeek !== null) {
+      h += '<section class="card"><h2>Intake against the scale</h2><div class="stats">'
+        + '<div class="stat"><div class="eyebrow">Intake implies</div><div class="v">' + signed(w.expectedKgPerWeek, 2) + '<small>kg / week</small></div></div>'
+        + '<div class="stat"><div class="eyebrow">Scale shows</div><div class="v">' + (trend ? signed(trend.kgPerWeek, 2) + '<small>kg / week</small>' : '–') + '</div></div></div>';
+      if (trend) {
+        var diff = trend.kgPerWeek - w.expectedKgPerWeek;
+        if (w.daysLogged < 5) h += '<p class="note">With only ' + w.daysLogged + ' logged day' + (w.daysLogged === 1 ? '' : 's') + ' the comparison is rough.</p>';
+        else if (Math.abs(diff) <= 0.15) h += '<p class="note">The two agree, so the log and the maintenance figure look right.</p>';
+        else if (diff > 0) h += '<p class="note">The scale is moving up faster (or down slower) than the log implies. Either some food is going unlogged or maintenance is set too high.</p>';
+        else h += '<p class="note">The scale is dropping faster than the log implies. Maintenance may be set too low, or portions are being over-counted.</p>';
+      } else h += '<p class="small muted" style="margin:12px 0 0">Log weight on three days over a week to compare.</p>';
+      h += '<p class="small muted" style="margin:10px 0 0">Uses 7,700 kcal per kg, and the scale trend over 28 days. Water shifts make any single week noisy.</p></section>';
+    }
+    return h;
+  }
+
+  function weekChart(w, target, maint) {
+    var max = Math.max.apply(null, w.days.map(function (d) { return d.kcal; }).concat([target || 0, maint || 0, 1])) * 1.1;
+    var W = 360, H = 200, pl = 4, pr = 4, pt = 20, pb = 26, bw = (W - pl - pr) / 7;
+    var Y = function (k) { return pt + (1 - k / max) * (H - pt - pb); };
+    var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Calories for each of the seven days">';
+    w.days.forEach(function (d, i) {
+      var x = pl + i * bw + bw * 0.16, bwid = bw * 0.68, wd = L.parseDay(d.day).toLocaleDateString('en-GB', { weekday: 'short' });
+      if (d.entries) {
+        var over = target && d.kcal > target;
+        svg += '<rect x="' + x + '" y="' + Y(d.kcal) + '" width="' + bwid + '" height="' + (H - pb - Y(d.kcal)) + '" rx="5" fill="' + (over ? 'var(--over)' : 'var(--good)') + '"><title>' + wd + ': ' + fmt(d.kcal) + ' kcal</title></rect>'
+          + '<text x="' + (x + bwid / 2) + '" y="' + (Y(d.kcal) - 5) + '" text-anchor="middle" font-size="10.5" fill="var(--ink)" font-family="var(--mono)" paint-order="stroke" stroke="var(--surface)" stroke-width="3">' + Math.round(d.kcal) + '</text>';
+      } else {
+        svg += '<rect x="' + x + '" y="' + (H - pb - 26) + '" width="' + bwid + '" height="26" rx="4" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/>'
+          + '<text x="' + (x + bwid / 2) + '" y="' + (H - pb - 9) + '" text-anchor="middle" font-size="10" fill="var(--muted)">none</text>';
+      }
+      svg += '<text x="' + (x + bwid / 2) + '" y="' + (H - 9) + '" text-anchor="middle" font-size="11.5" fill="var(--muted)">' + wd + '</text>';
+    });
+    if (maint) svg += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + Y(maint) + '" y2="' + Y(maint) + '" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 5"/>';
+    if (target) svg += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + Y(target) + '" y2="' + Y(target) + '" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="7 5"/>';
+    svg += '</svg>';
+    return svg + '<div class="legend">' + (target ? '<span><i class="dash" style="border-color:var(--ink)"></i>target ' + fmt(target) + '</span>' : '')
+      + (maint ? '<span><i class="dash" style="border-color:var(--muted)"></i>maintenance ' + fmt(maint) + '</span>' : '') + (target ? '<span><span style="color:var(--good)">■</span> within target</span><span><span style="color:var(--over)">■</span> over</span>' : '') + '</div>';
+  }
+
+  // ---------- Settings ----------
+  function viewSettings() {
+    var s = state.settings, val = function (k) { return s[k] ? esc(s[k]) : ''; };
+    var h = '<section class="card"><h2>Targets</h2><form id="sform" class="stack">'
+      + '<div><label for="s-maint">Maintenance calories (kcal / day)</label><input id="s-maint" inputmode="decimal" placeholder="e.g. 2600" value="' + val('maintenanceKcal') + '" /></div>'
+      + '<div><label for="s-target">Daily calorie target (blank = maintenance − 400)</label><input id="s-target" inputmode="decimal" value="' + val('targetKcal') + '" /></div>'
+      + '<div><label for="s-protein">Protein target (g / day)</label><input id="s-protein" inputmode="decimal" value="' + val('proteinG') + '" /></div>'
+      + '<div><label for="s-goal">Goal weight (kg)</label><input id="s-goal" inputmode="decimal" value="' + val('goalKg') + '" /></div>'
+      + '<div><label for="s-theme">Appearance</label><select id="s-theme">' + ['auto', 'light', 'dark'].map(function (t) { return '<option value="' + t + '"' + (s.theme === t ? ' selected' : '') + '>' + (t === 'auto' ? 'Match device' : t.charAt(0).toUpperCase() + t.slice(1)) + '</option>'; }).join('') + '</select></div>'
+      + '<button class="primary" type="submit">Save targets</button></form></section>';
+
+    h += '<section class="card"><h2>Your data</h2><p class="small muted" style="margin-top:0">Everything is stored in this browser on this device and is sent nowhere. Clearing the browser’s site data deletes it, so take a backup now and then.</p>'
+      + '<p class="small"><span class="num">' + state.entries.length + '</span> food entries · <span class="num">' + state.weights.length + '</span> weight readings · <span class="num">' + Object.keys(state.foods).length + '</span> remembered foods</p>'
+      + '<div class="btnrow"><button data-act="export-json">Download backup</button><button data-act="import">Restore backup</button></div>'
+      + '<input id="importfile" type="file" accept="application/json,.json" hidden />'
+      + '<div class="eyebrow" style="margin-top:18px">For Notion or a spreadsheet</div>'
+      + '<p class="small muted">CSV files with the same column names as the Notion Food Diary and weight notes, so they can be merged in with Notion’s CSV import.</p>'
+      + '<div class="btnrow"><button data-act="export-food">Food CSV</button><button data-act="export-weight">Weight CSV</button></div>'
+      + '<div class="eyebrow" style="margin-top:18px">Start over</div>'
+      + '<div class="btnrow" style="margin-top:8px"><button class="danger" data-act="wipe">Delete everything</button></div></section>';
+    return h;
+  }
+
+  function download(name, text, type) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: type }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
+  // ---------- Shell ----------
+  var TABS = [['today', 'Log'], ['weight', 'Weight'], ['week', 'Week'], ['settings', 'Settings']];
+  function render() {
+    $('tabs').innerHTML = TABS.map(function (t) { return '<button data-act="tab" data-tab="' + t[0] + '"' + (ui.tab === t[0] ? ' aria-current="page"' : '') + '>' + t[1] + '</button>'; }).join('');
+    $('view').innerHTML = { today: viewToday, weight: viewWeight, week: viewWeek, settings: viewSettings }[ui.tab]();
+    var st = L.streak(state.entries, today());
+    $('streak').textContent = st > 1 ? st + ' days in a row' : '';
+  }
+
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.dataset.act;
+    if (act === 'tab') { ui.tab = b.dataset.tab; ui.editing = null; window.scrollTo(0, 0); }
+    else if (act === 'day') { var nd = L.addDays(ui.day, +b.dataset.n); if (nd <= today()) { ui.day = nd; ui.editing = null; } }
+    else if (act === 'week') { var ne = L.addDays(ui.weekEnd || today(), +b.dataset.n); ui.weekEnd = ne >= today() ? null : ne; }
+    else if (act === 'quick') {
+      var f = state.foods[b.dataset.food]; if (!f) return;
+      var e = { name: f.name, qty: 1 }; L.MACROS.forEach(function (k) { e[k] = f[k] || 0; });
+      addEntry(e, ui.day); remember(e); save(); toast('Added ' + f.name);
+    }
+    else if (act === 'edit') { ui.editing = b.dataset.id; render(); $('f-name').focus(); return; }
+    else if (act === 'cancel-edit') { ui.editing = null; }
+    else if (act === 'del') {
+      var gone = state.entries.filter(function (x) { return x.id === b.dataset.id; })[0];
+      state.entries = state.entries.filter(function (x) { return x.id !== b.dataset.id; });
+      if (ui.editing === b.dataset.id) ui.editing = null;
+      save(); if (gone) toast('Removed ' + gone.name);
+    }
+    else if (act === 'copy-prev') {
+      var prev = L.addDays(ui.day, -1), n = 0;
+      state.entries.filter(function (x) { return x.day === prev; }).forEach(function (x) {
+        var c = { name: x.name, qty: x.qty || 1 }; L.MACROS.forEach(function (k) { c[k] = x[k] || 0; });
+        addEntry(c, ui.day); n++;
+      });
+      save(); toast('Copied ' + n + ' entr' + (n === 1 ? 'y' : 'ies'));
+    }
+    else if (act === 'del-weight') { state.weights = state.weights.filter(function (w) { return w.day !== b.dataset.day; }); save(); }
+    else if (act === 'export-json') { download('fuel-backup-' + today() + '.json', JSON.stringify(state, null, 2), 'application/json'); return; }
+    else if (act === 'export-food') { if (!state.entries.length) return toast('No food entries to export yet.'); download('fuel-food-' + today() + '.csv', L.foodCsv(state.entries), 'text/csv'); return; }
+    else if (act === 'export-weight') { if (!state.weights.length) return toast('No weight readings to export yet.'); download('fuel-weight-' + today() + '.csv', L.weightCsv(state.weights), 'text/csv'); return; }
+    else if (act === 'import') { $('importfile').click(); return; }
+    else if (act === 'wipe') {
+      if (!confirm('Delete all ' + state.entries.length + ' food entries, ' + state.weights.length + ' weight readings and your targets from this device? This cannot be undone.')) return;
+      state = blank(); save(); applyTheme(); toast('Everything deleted.');
+    }
+    render();
+  });
+
+  document.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var id = ev.target.id;
+    if (id === 'addform') {
+      var r = readForm();
+      if (r.error) return toast(r.error);
+      if (ui.editing) {
+        var ex = state.entries.filter(function (x) { return x.id === ui.editing; })[0];
+        if (ex) Object.assign(ex, r.entry);
+        ui.editing = null; toast('Saved');
+      } else { addEntry(r.entry, ui.day); toast('Added ' + r.entry.name); }
+      remember(r.entry); save(); render();
+    } else if (id === 'wform') {
+      var kg = L.parseNum($('w-kg').value), day = $('w-day').value || today();
+      if (kg === null || kg < 20 || kg > 400) return toast('Enter a weight in kg, e.g. 80.5');
+      if (day > today()) return toast('That date is in the future.');
+      var replaced = state.weights.some(function (w) { return w.day === day; });
+      state.weights = state.weights.filter(function (w) { return w.day !== day; });
+      state.weights.push({ day: day, kg: kg });
+      save(); render(); toast(replaced ? 'Updated the reading for ' + dayLabel(day, true) : 'Saved ' + kg + ' kg');
+    } else if (id === 'sform') {
+      var s = state.settings, bad = null;
+      var read = function (elId, key, min, max, label) {
+        var raw = $(elId).value.trim();
+        if (raw === '') { s[key] = null; return; }
+        var n = L.parseNum(raw);
+        if (n === null || n < min || n > max) bad = bad || label + ' should be between ' + min + ' and ' + max + '.';
+        else s[key] = n;
+      };
+      read('s-maint', 'maintenanceKcal', 1000, 6000, 'Maintenance');
+      read('s-target', 'targetKcal', 800, 6000, 'The calorie target');
+      read('s-protein', 'proteinG', 20, 400, 'Protein');
+      read('s-goal', 'goalKg', 30, 300, 'Goal weight');
+      s.theme = $('s-theme').value;
+      save(); applyTheme(); render();
+      toast(bad || 'Targets saved');
+    }
+  });
+
+  // Choosing a remembered food fills in its numbers.
+  document.addEventListener('input', function (ev) {
+    if (ev.target.id !== 'f-name' || ui.editing) return;
+    var f = state.foods[ev.target.value.trim().toLowerCase()];
+    if (!f) return;
+    L.MACROS.forEach(function (k) { $('f-' + k).value = f[k] ? f[k] : (k === 'kcal' ? 0 : ''); });
+  });
+
+  document.addEventListener('change', function (ev) {
+    if (ev.target.id !== 'importfile') return;
+    var file = ev.target.files[0]; if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data;
+      try { data = JSON.parse(reader.result); } catch (e) { return toast('That file is not valid JSON.'); }
+      var err = L.validateBackup(data);
+      if (err) return toast(err);
+      if ((state.entries.length || state.weights.length) && !confirm('Replace what is on this device (' + state.entries.length + ' entries, ' + state.weights.length + ' readings) with the backup (' + data.entries.length + ' entries, ' + data.weights.length + ' readings)?')) return;
+      var b = blank();
+      state = { version: 1, settings: Object.assign(b.settings, data.settings || {}), entries: data.entries, weights: data.weights, foods: data.foods && typeof data.foods === 'object' ? data.foods : {} };
+      save(); applyTheme(); render(); toast('Backup restored.');
+    };
+    reader.readAsText(file);
+    ev.target.value = '';
+  });
+
+  applyTheme();
+  render();
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
