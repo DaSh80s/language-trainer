@@ -20,7 +20,7 @@ t('every module category is a known category', Object.keys(de.categories).every(
 t('every category has a group', cats.CATEGORIES.every((c) => c.group));
 t('ids globally unique', new Set(all.map((i) => i.id)).size === all.length);
 t('naturalness has 245 items', inGroup('naturalness').length === 245, inGroup('naturalness').length);
-t('business has at least 90 items', inGroup('business').length >= 90, inGroup('business').length);
+t('business has at least 240 items', inGroup('business').length >= 240, inGroup('business').length);
 t('every item has a known format', all.every((i) => cats.FORMATS[i.format]), all.filter((i) => !cats.FORMATS[i.format]).map((i) => i.id).join(','));
 t('no ß in any German shown or expected (Swiss spelling)', !all.some((i) => /ß/.test(JSON.stringify(i.prompt) + i.target)),
   all.filter((i) => /ß/.test(JSON.stringify(i.prompt) + i.target)).map((i) => i.id).join(','));
