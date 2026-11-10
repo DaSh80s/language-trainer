@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react';
 import * as nat from './naturalness/index.js';
 import * as det from './naturalness/detector.js';
 import * as voice from './voice.js';
+import { splitArticle, posOf, posCounts, normalizePos, parseVocabEntries, mergeVocab, PARTS_OF_SPEECH, POS_LABEL, POS_PLURAL, VOCAB_LINE_FORMAT } from './vocab.js';
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
 const LIGHT_VARS = {
@@ -22,11 +23,6 @@ const DARK_VARS = {
   '--field': '#2A281F', '--input': '#242219', '--shadow': 'rgba(0,0,0,.45)',
 };
 
-const ARTICLES = new Set([
-  'der', 'die', 'das', 'el', 'la', 'le', 'les', 'los', 'las', 'un', 'una', 'une',
-  'il', 'lo', 'gli', 'de', 'het', 'ett', 'en',
-]);
-
 /**
  * Naturalness areas are practice modes in their own right, identified by a
  * 'nat:' prefix — 'nat:particles', or 'nat:mixed' for all of them. They sit in
@@ -35,15 +31,6 @@ const ARTICLES = new Set([
 const isNatMode = (m) => typeof m === 'string' && (m.startsWith('nat:') || m.startsWith('biz:'));
 /** Which dropdown group a drill mode belongs to. Both prefixes are four characters. */
 const drillGroupOf = (m) => (typeof m === 'string' && m.startsWith('biz:') ? 'business' : 'naturalness');
-
-function splitArticle(word) {
-  if (!word) return [null, word || ''];
-  const parts = String(word).trim().split(/\s+/);
-  if (parts.length > 1 && ARTICLES.has(parts[0].toLowerCase())) {
-    return [parts[0], parts.slice(1).join(' ')];
-  }
-  return [null, word];
-}
 
 function parseVerbs(raw) {
   const seen = new Set();
@@ -270,6 +257,7 @@ export default function LanguagePracticeApp() {
 
   // Vocabulary view state
   const [vocabFilter, setVocabFilter] = useState('all');
+  const [vocabPos, setVocabPos] = useState('all');
   const [vocabSearch, setVocabSearch] = useState('');
 
   const conversationEndRef = useRef(null);
@@ -277,6 +265,47 @@ export default function LanguagePracticeApp() {
   useEffect(() => { selectedLanguageRef.current = selectedLanguage; }, [selectedLanguage]);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // ── Mobile setup sheet ──────────────────────────────────────────────────────
+  // On a phone the setup rail is a bottom sheet opened from a summary bar; on
+  // wider screens it is the ordinary left rail and this state is never true.
+  const [railOpen, setRailOpen] = useState(false);
+  const railRef = useRef(null);
+  const railChipRef = useRef(null);
+  const railCloseRef = useRef(null);
+  useEffect(() => {
+    if (!railOpen) return undefined;
+    const mq = window.matchMedia('(max-width: 760px)');
+    if (!mq.matches) { setRailOpen(false); return undefined; }
+    const onMq = (e) => { if (!e.matches) setRailOpen(false); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { setRailOpen(false); return; }
+      if (e.key !== 'Tab' || !railRef.current) return;
+      // Keep Tab inside the sheet while it is open.
+      const els = [...railRef.current.querySelectorAll('button, select, textarea, input, [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!els.length) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      if (!railRef.current.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKey);
+    if (mq.addEventListener) mq.addEventListener('change', onMq);
+    const opener = railChipRef.current;
+    if (railCloseRef.current) railCloseRef.current.focus();
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener('keydown', onKey);
+      if (mq.removeEventListener) mq.removeEventListener('change', onMq);
+      // Hand focus back to whatever opened the sheet, unless a session start
+      // has already moved it to the answer box.
+      if (opener && (document.activeElement === document.body || (railRef.current && railRef.current.contains(document.activeElement)))) opener.focus();
+    };
+  }, [railOpen]);
 
   useEffect(() => {
     loadAllData();
@@ -420,6 +449,18 @@ export default function LanguagePracticeApp() {
   };
 
   const saveVocabulary = (vocab) => localStorage.setItem(`vocab-${selectedLanguage}`, JSON.stringify(vocab));
+  // Vocabulary mode: the tutor lists each new word in a fixed line format (see
+  // VOCAB_LINE_FORMAT), so the words — with their part of speech — can be saved
+  // as they are taught. Anything that does not parse is simply not saved.
+  const collectVocab = (reply) => {
+    const entries = parseVocabEntries(reply);
+    if (!entries.length) return;
+    setVocabularyList((prev) => {
+      const { list, added } = mergeVocab(prev, entries);
+      if (added) { try { saveVocabulary(list); } catch (e) { /* storage full: keep in memory */ } }
+      return list;
+    });
+  };
   const updateVerbInput = (raw) => {
     setVerbInput(raw);
     try { localStorage.setItem(`verbs-${selectedLanguage}`, raw); } catch (e) { /* ignore */ }
@@ -493,7 +534,7 @@ ONE exercise per message. Format:
 
 Every 5 exercises, give a one-line score and name the verbs still looking shaky.
 Keep it SHORT and snappy. Use emojis 🔁`,
-      vocabulary: `Teach ${selectedLanguage} vocabulary (${levels[proficiencyLevel]}). ${topicContext} Give 5 words with: word, IPA, example. Then ask user to make sentences. Keep feedback SHORT. Use emojis 📖`,
+      vocabulary: `Teach ${selectedLanguage} vocabulary (${levels[proficiencyLevel]}). ${topicContext} Give 5 words. Put each new word on its own line in exactly this form: ${VOCAB_LINE_FORMAT}. The part of speech must be one of: ${PARTS_OF_SPEECH.join(', ')}. Give nouns with their article. Then ask user to make sentences. Keep feedback SHORT. Use emojis 📖`,
       translation: `Translation drills for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give 3-5 sentences. Alternate directions. SHORT feedback with emojis ✓`,
       listening: `Listening practice for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Describe a scenario, ask 2-3 questions. Keep it SHORT. Use emojis 👂`,
       pronunciation: `Pronunciation for ${selectedLanguage} (${levels[proficiencyLevel]}). ${topicContext} Give words with IPA, explain sounds BRIEFLY, practice. Use emojis 🗣️`,
@@ -623,6 +664,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       }
       const response = await callClaudeAPI(apiMessages, nextCursor);
       setConversation([...updated, { role: 'assistant', content: response }]);
+      if (practiceMode === 'vocabulary') collectVocab(response);
 
       if (practiceMode === 'grammar' && !isDrilling && (response.toLowerCase().includes('correct') || response.toLowerCase().includes('mistake'))) {
         const conceptMatch = response.match(/(?:concept|rule|point).*?:\s*([^.]+)/i);
@@ -1101,6 +1143,7 @@ Use emojis. Keep it snappy and encouraging. ONE noun per message.`,
       };
       const response = await callClaudeAPI([{ role: 'user', content: prompts[practiceMode] }], 0);
       setConversation([{ role: 'assistant', content: response }]);
+      if (practiceMode === 'vocabulary') collectVocab(response);
     } catch (error) {
       console.error('Start error:', error);
       let errorMsg = 'Error starting session.';
@@ -1201,8 +1244,9 @@ Format:
     if (!word) return;
     const translation = prompt('Translation:') || '';
     const example = prompt('Example (optional):') || '';
+    const pos = normalizePos(prompt(`Part of speech (optional): ${PARTS_OF_SPEECH.join(', ')}`) || '');
     const newVocab = {
-      id: Date.now(), word, translation, example,
+      id: Date.now(), word, translation, example, ...(pos ? { pos } : {}),
       dateAdded: new Date().toISOString(), nextReview: new Date().toISOString(), reviewCount: 0,
     };
     const updated = [...vocabularyList, newVocab];
@@ -1217,8 +1261,8 @@ Format:
   };
 
   const handleExportVocab = () => {
-    const csv = 'Word,Translation,Example,Date\n' +
-      vocabularyList.map((v) => `"${v.word}","${v.translation}","${v.example}","${new Date(v.dateAdded).toLocaleDateString()}"`).join('\n');
+    const csv = 'Word,Translation,Example,Date,Part of speech\n' +
+      vocabularyList.map((v) => `"${v.word}","${v.translation}","${v.example}","${new Date(v.dateAdded).toLocaleDateString()}","${posOf(v) || ''}"`).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1340,7 +1384,11 @@ Format:
   // ── Vocabulary derived data ──
   const masteredCount = vocabularyList.filter((v) => (v.reviewCount || 0) >= 5).length;
   const dueCount = vocabularyList.filter((v) => dueStatus(v).due).length;
+  // Part-of-speech chips appear only for parts of speech actually present.
+  const vocabPosCounts = posCounts(vocabularyList);
+  const activePos = vocabPosCounts.some((c) => c.pos === vocabPos) ? vocabPos : 'all';
   const filteredVocab = vocabularyList.filter((v) => {
+    if (activePos !== 'all' && posOf(v) !== activePos) return false;
     if (vocabSearch) {
       const q = vocabSearch.toLowerCase();
       if (!`${v.word} ${v.translation}`.toLowerCase().includes(q)) return false;
@@ -1496,7 +1544,7 @@ Format:
           </div>
         )}
 
-        <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div className="fluo-stack" style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
 
           {/* ===== HEADER ===== */}
           <div className="fluo-header" style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 1px 3px var(--shadow)', padding: '24px 30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1542,9 +1590,55 @@ Format:
           {/* ===== PRACTICE TAB ===== */}
           {activeTab === 'practice' && (
             <div className="fluo-practice" style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 2px 10px var(--shadow)', overflow: 'hidden', minHeight: 600 }}>
+              {/* Phones only (hidden by CSS above 760px): the setup collapses to this
+                  summary bar, and the rail below opens from it as a bottom sheet. */}
+              <div className="fluo-railchip" style={{ alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--panel-2)', borderBottom: '1px solid var(--border)' }}>
+                <button
+                  ref={railChipRef}
+                  className="fluo-railchip-open"
+                  onClick={() => setRailOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={railOpen}
+                  aria-label={`Session setup: ${selectedLanguage}, ${modeName}${isNat ? '' : `, level ${proficiencyLevel}`}. Tap to change.`}
+                  style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, background: 'var(--field)', border: '1px solid var(--border)', borderRadius: 999, padding: '9px 14px', cursor: 'pointer', color: 'var(--ink)', font: "500 13px 'IBM Plex Sans',sans-serif", textAlign: 'left' }}
+                >
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedLanguage}<span style={{ color: 'var(--faint)' }}> · </span>{modeName}
+                    {!isNat && <><span style={{ color: 'var(--faint)' }}> · </span>{proficiencyLevel}</>}
+                  </span>
+                  <span style={{ flex: '0 0 auto', font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--accent)' }}>Setup ⌄</span>
+                </button>
+                {conversation.length === 0 ? (
+                  <button
+                    onClick={handleStartPractice}
+                    disabled={!practiceMode || isLoading || (isNat && nat.hasModule(selectedLanguage) && natItems.length === 0)}
+                    style={{ flex: '0 0 auto', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 13px 'IBM Plex Sans'", padding: '10px 16px', borderRadius: 999, cursor: 'pointer' }}
+                  >
+                    {isLoading ? 'Starting…' : 'Start'}
+                  </button>
+                ) : null}
+              </div>
+              <div className={`fluo-sheet-backdrop${railOpen ? ' is-open' : ''}`} onClick={() => setRailOpen(false)} aria-hidden="true" />
+
               {/* setup rail */}
-              <div className="fluo-rail" style={{ flex: '0 0 252px', background: 'var(--panel-2)', borderRight: '1px solid var(--border)', padding: '24px 22px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 20 }}>Session setup</div>
+              <div
+                ref={railRef}
+                className={`fluo-rail${railOpen ? ' is-open' : ''}`}
+                role={railOpen ? 'dialog' : undefined}
+                aria-modal={railOpen ? 'true' : undefined}
+                aria-label={railOpen ? 'Session setup' : undefined}
+                style={{ flex: '0 0 252px', background: 'var(--panel-2)', borderRight: '1px solid var(--border)', padding: '24px 22px', display: 'flex', flexDirection: 'column' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                  <div style={{ font: "500 11px/1 'IBM Plex Mono'", letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--accent)' }}>Session setup</div>
+                  <button
+                    ref={railCloseRef}
+                    className="fluo-sheet-close"
+                    onClick={() => setRailOpen(false)}
+                    aria-label="Close setup"
+                    style={{ alignItems: 'center', justifyContent: 'center', width: 34, height: 34, margin: '-9px -6px -9px 0', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--field)', color: 'var(--muted)', fontSize: 19, lineHeight: 1, cursor: 'pointer' }}
+                  >×</button>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
                   <Select label="Language" value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)} options={languages.map((l) => ({ value: l, label: l }))} />
                   <Select label="Mode" value={practiceMode} onChange={(e) => setPracticeMode(e.target.value)} options={modeOptions} />
@@ -1594,7 +1688,7 @@ Format:
                           </div>
                           {practiceMode === 'biz:mine' && (
                             <button
-                              onClick={openImport}
+                              onClick={() => { setRailOpen(false); openImport(); }}
                               style={{ marginTop: 10, width: '100%', background: 'var(--accent-bg)', border: '1px solid var(--accent)', color: 'var(--accent)', font: "600 12.5px 'IBM Plex Sans'", padding: '8px 10px', borderRadius: 7, cursor: 'pointer' }}
                             >
                               {myPack.length ? 'Add or manage phrases' : '+ Add phrases from feedback'}
@@ -1657,7 +1751,7 @@ Format:
                   )}
 
                   <button
-                    onClick={handleStartPractice}
+                    onClick={() => { setRailOpen(false); handleStartPractice(); }}
                     disabled={!practiceMode || isLoading || (isNat && nat.hasModule(selectedLanguage) && natItems.length === 0)}
                     style={{ width: '100%', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', font: "600 14px 'IBM Plex Sans'", padding: '12px', borderRadius: 8, cursor: 'pointer', boxShadow: '0 4px 14px var(--accent-glow)' }}
                   >
@@ -1677,7 +1771,7 @@ Format:
                     </div>
                   )}
                   {conversation.length > 0 && (
-                    <div onClick={handleEndSession} style={{ textAlign: 'center', font: "500 13.5px 'IBM Plex Sans'", color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 7, padding: 11, cursor: 'pointer' }}>End session</div>
+                    <div onClick={() => { setRailOpen(false); handleEndSession(); }} style={{ textAlign: 'center', font: "500 13.5px 'IBM Plex Sans'", color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 7, padding: 11, cursor: 'pointer' }}>End session</div>
                   )}
                 </div>
               </div>
@@ -1704,18 +1798,18 @@ Format:
                 )}
 
                 {/* chat (chronological: oldest → newest, scrolls to bottom) */}
-                <div style={{ flex: 1, padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', maxHeight: 'calc(100vh - 300px)', minHeight: 340 }}>
+                <div className="fluo-chat" style={{ flex: 1, padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', maxHeight: 'calc(100vh - 300px)', minHeight: 340 }}>
                   {conversation.length === 0 && !isLoading ? (
                     <div style={{ margin: 'auto', textAlign: 'center', maxWidth: 360 }}>
                       {practiceMode === 'biz:mine' && natItems.length === 0 ? (
                         <>
                           <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, color: 'var(--soft)', lineHeight: 1.34 }}>Your pack is empty.</div>
-                          <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>Add phrases from feedback first — use the button on the left.</div>
+                          <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>Add phrases from feedback first — <span className="fluo-wide-only">use the button on the left.</span><span className="fluo-narrow-only">open Setup and use the button there.</span></div>
                         </>
                       ) : (
                         <>
                           <div style={{ fontFamily: "'Spectral',serif", fontWeight: 500, fontSize: 22, color: 'var(--soft)', lineHeight: 1.34 }}>Ready when you are.</div>
-                          <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>Pick a mode on the left, then press Start session.</div>
+                          <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8 }}><span className="fluo-wide-only">Pick a mode on the left, then press Start session.</span><span className="fluo-narrow-only">Tap Setup to pick a mode, then press Start.</span></div>
                         </>
                       )}
                     </div>
@@ -1727,7 +1821,7 @@ Format:
                         msg.role === 'assistant' ? (
                           <div key={idx} style={{ display: 'flex', gap: 12 }}>
                             <div style={{ flex: '0 0 30px', height: 30, borderRadius: '50%', background: msg.polish ? 'var(--green)' : 'var(--accent)', color: msg.polish ? 'var(--panel)' : 'var(--accent-ink)', font: "600 12px/30px 'IBM Plex Sans'", textAlign: 'center' }}>{msg.polish ? '↑' : 'T'}</div>
-                            <div style={{ position: 'relative', maxWidth: 620 }}>
+                            <div style={{ position: 'relative', maxWidth: 620, minWidth: 0, marginRight: voiceOn && (!isNat || msg.speak) ? 34 : 0 }}>
                               <div
                                 style={{
                                   background: msg.polish ? 'var(--green-bg)' : 'var(--panel)',
@@ -1776,7 +1870,7 @@ Format:
                       onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                       placeholder={conversation.length === 0 ? 'Start a session first…' : 'Type your answer…'}
                       disabled={conversation.length === 0 || isLoading}
-                      style={{ flex: 1, background: 'var(--input)', border: '1.5px solid var(--border)', borderRadius: 9, padding: '14px 16px', minHeight: 50, color: 'var(--ink)', fontSize: 15, fontFamily: "'Spectral',serif", fontStyle: 'italic', outline: 'none' }}
+                      style={{ flex: 1, minWidth: 0, background: 'var(--input)', border: '1.5px solid var(--border)', borderRadius: 9, padding: '14px 16px', minHeight: 50, color: 'var(--ink)', fontSize: 15, fontFamily: "'Spectral',serif", fontStyle: 'italic', outline: 'none' }}
                     />
                     {micOn && (
                       <button
@@ -1814,14 +1908,14 @@ Format:
 
           {/* ===== VOCABULARY TAB ===== */}
           {activeTab === 'vocabulary' && (
-            <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 2px 10px var(--shadow)', padding: '28px 30px' }}>
+            <div className="fluo-vocab-panel" style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 2px 10px var(--shadow)', padding: '28px 30px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
                   <span style={{ fontFamily: "'Spectral',serif", fontWeight: 600, fontSize: 24, color: 'var(--ink)' }}>{selectedLanguage} Vocabulary</span>
                   <span style={{ font: "500 12px 'IBM Plex Mono'", color: 'var(--muted)' }}>{vocabularyList.length} words</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ background: 'var(--field)', border: '1px solid var(--border)', borderRadius: 8, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
+                <div className="fluo-vocab-tools" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ background: 'var(--field)', border: '1px solid var(--border)', borderRadius: 8, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }} className="fluo-vocab-search">
                     <span style={{ color: 'var(--faint)' }}>⌕</span>
                     <input
                       value={vocabSearch}
@@ -1850,6 +1944,24 @@ Format:
                     </span>
                   );
                 })}
+                {/* Part of speech: a second, independent filter. A chip exists only
+                    for a part of speech some saved word actually has. */}
+                {vocabPosCounts.length > 0 && <span aria-hidden="true" className="fluo-wide-only" style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '2px 4px' }} />}
+                {vocabPosCounts.map(({ pos, count }) => {
+                  const active = activePos === pos;
+                  return (
+                    <span
+                      key={pos}
+                      className="fluo-chip"
+                      role="button"
+                      aria-pressed={active}
+                      onClick={() => setVocabPos(active ? 'all' : pos)}
+                      style={{ font: "500 12.5px 'IBM Plex Sans'", borderRadius: 20, padding: '7px 15px', background: active ? 'var(--accent-bg)' : 'transparent', color: active ? 'var(--accent)' : 'var(--muted)', border: active ? '1px solid var(--accent)' : '1px dashed var(--border)' }}
+                    >
+                      {POS_PLURAL[pos]} · {count}
+                    </span>
+                  );
+                })}
               </div>
 
               {/* word grid */}
@@ -1864,6 +1976,7 @@ Format:
                     const mastery = Math.max(0, Math.min(5, v.reviewCount || 0));
                     const mastered = mastery >= 5;
                     const ds = dueStatus(v);
+                    const pos = posOf(v);
                     return (
                       <div key={v.id} className="fluo-vocab-card" style={{ position: 'relative', background: 'var(--panel-3)', border: '1px solid var(--border)', borderRadius: 11, padding: '18px 20px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, gap: 10 }}>
@@ -1871,6 +1984,7 @@ Format:
                             {article && <span style={{ color: 'var(--accent)' }}>{article} </span>}{base}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
+                            {pos && <span style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 7px' }}>{POS_LABEL[pos]}</span>}
                             {mastered && <span style={{ font: "500 10px/1 'IBM Plex Mono'", letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--green)', border: '1px solid var(--green-border)', background: 'var(--green-bg)', borderRadius: 4, padding: '5px 7px' }}>Mastered</span>}
                             <button className="fluo-card-del" onClick={() => handleDeleteVocab(v.id)} title="Delete" style={{ background: 'transparent', border: 'none', color: 'var(--faint)', cursor: 'pointer', padding: 2, display: 'flex' }}>
                               <Trash2 size={14} />
@@ -1914,12 +2028,14 @@ Format:
                     const has = d.min > 0;
                     const h = has ? Math.max(12, Math.round((d.min / maxMin) * 100)) : 8;
                     return (
-                      <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                        <div style={{
-                          width: '100%', maxWidth: 46, height: `${h}%`, borderRadius: '6px 6px 0 0',
-                          background: isToday && has ? 'var(--accent)' : has ? 'var(--accent-bg)' : 'var(--border-2)',
-                          border: has && !isToday ? '1px solid var(--accent)' : 'none',
-                        }} />
+                      <div key={i} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                          <div style={{
+                            width: '100%', maxWidth: 46, height: `${h}%`, borderRadius: '6px 6px 0 0', boxSizing: 'border-box',
+                            background: isToday && has ? 'var(--accent)' : has ? 'var(--accent-bg)' : 'var(--border-2)',
+                            border: has && !isToday ? '1px solid var(--accent)' : 'none',
+                          }} />
+                        </div>
                         <span style={{ font: `${isToday ? 600 : 500} 11px 'IBM Plex Mono'`, color: isToday ? 'var(--accent)' : 'var(--muted)' }}>{dayLabels[i]}</span>
                       </div>
                     );

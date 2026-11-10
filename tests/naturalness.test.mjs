@@ -7,6 +7,7 @@ import * as nat from '../src/naturalness/index.js';
 import * as det from '../src/naturalness/detector.js';
 import * as cats from '../src/naturalness/categories.js';
 import * as voice from '../src/voice.js';
+import * as vocab from '../src/vocab.js';
 
 let fails = 0;
 const t = (name, cond, detail = '') => {
@@ -124,6 +125,24 @@ console.log('\n== voice ==');
 t('German locale', voice.langCode('German') === 'de-DE');
 t('asterisks stripped before speaking', voice.speakableText('*Reactions* **Warte mal.**') === 'Reactions Warte mal.');
 t('no browser: no throw', voice.speak('x', 'German') === false);
+
+console.log('\n== vocabulary: part of speech ==');
+const oldWord = { id: 1, word: 'die Frist', translation: 'deadline', example: '', reviewCount: 0 };
+t('a word saved before the field existed still reads', vocab.posOf({ id: 2, word: 'allenfalls', translation: 'possibly' }) === null);
+t('article means noun, as before', vocab.posOf(oldWord) === 'noun');
+t('"to ..." gloss means verb', vocab.posOf({ word: 'verschieben', translation: 'to postpone' }) === 'verb');
+t('stored value wins over derivation', vocab.posOf({ word: 'das Hin und Her', translation: 'x', pos: 'phrase' }) === 'phrase');
+t('loose spellings normalise', vocab.normalizePos('Adj.') === 'adjective' && vocab.normalizePos('Noun (f)') === 'noun' && vocab.normalizePos('Substantiv') === 'noun');
+t('nonsense is not a part of speech', vocab.normalizePos('one to three words') === null && vocab.normalizePos('') === null);
+t('chips only for what is present', JSON.stringify(vocab.posCounts([oldWord, { word: 'x', translation: 'y' }])) === JSON.stringify([{ pos: 'noun', count: 1 }]));
+const reply = ['Here are five words 📖', '1. **die Offerte** (noun) /ɔˈfɛrtə/ — quote, offer — "Wir holen zwei Offerten ein."',
+  '- **vertagen** (verb) /fɛɐ̯ˈtaːɡn̩/ — to postpone', '**Reactions** (one to three words) — not a word', '**die Offerte** (noun) — duplicate'].join('\n');
+const parsed = vocab.parseVocabEntries(reply);
+t('tutor lines parse, with part of speech', parsed.length === 2 && parsed[0].word === 'die Offerte' && parsed[0].pos === 'noun' && parsed[1].pos === 'verb', JSON.stringify(parsed));
+t('translation and example are separated', parsed[0].translation === 'quote, offer' && parsed[0].example === 'Wir holen zwei Offerten ein.' && parsed[1].translation === 'to postpone', JSON.stringify(parsed));
+const mv = vocab.mergeVocab([oldWord], parsed, 1000);
+t('merge adds new words and keeps old ones untouched', mv.added === 2 && mv.list.length === 3 && mv.list[0] === oldWord && mv.list[1].pos === 'noun');
+t('merge skips words already saved', vocab.mergeVocab(mv.list, parsed, 2000).added === 0);
 
 console.log(fails ? `\n${fails} FAILURE(S)\n` : '\nAll checks passed.\n');
 process.exit(fails ? 1 : 0);

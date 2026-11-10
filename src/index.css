@@ -7,14 +7,45 @@
 
 .fluo-page select option { color: #211d18; }
 
-/* Practice screen: two columns on desktop/tablet, stacked on phones */
+/* Practice screen: two columns on desktop/tablet. On phones the setup rail
+   collapses to a summary bar and opens as a bottom sheet. */
 .fluo-practice { display: flex; }
+.fluo-railchip, .fluo-sheet-backdrop, .fluo-sheet-close, .fluo-narrow-only { display: none; }
+
 @media (max-width: 760px) {
   .fluo-page { padding: 18px 16px 48px !important; }
-  .fluo-practice { flex-direction: column; }
-  .fluo-rail { flex: 1 1 auto !important; border-right: none !important; border-bottom: 1px solid var(--border); }
+  .fluo-practice { flex-direction: column; min-height: 0 !important; }
+  .fluo-railchip { display: flex; }
+  .fluo-narrow-only { display: inline; }
+  .fluo-wide-only { display: none; }
+
+  /* The rail is out of the flow entirely until opened. */
+  .fluo-rail { display: none !important; }
+  .fluo-rail.is-open {
+    display: flex !important;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
+    flex: none !important;
+    max-height: 86vh; overflow-y: auto; overscroll-behavior: contain;
+    border: 1px solid var(--border); border-bottom: none !important; border-right: 1px solid var(--border) !important;
+    border-radius: 18px 18px 0 0;
+    padding: 20px 20px calc(22px + env(safe-area-inset-bottom, 0px)) !important;
+    box-shadow: 0 -14px 44px var(--shadow);
+    animation: fluo-sheet-up 0.22s ease-out;
+  }
+  .fluo-sheet-backdrop.is-open { display: block; position: fixed; inset: 0; z-index: 60; background: rgba(20, 16, 10, 0.5); }
+  .fluo-sheet-close { display: flex; }
+
+  /* With the rail gone the chat can take the height it was losing. */
+  .fluo-chat { padding: 16px 14px !important; max-height: calc(100vh - 290px) !important; max-height: calc(100dvh - 290px) !important; min-height: 260px !important; }
+
   .fluo-stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
-  .fluo-vocab-grid { grid-template-columns: 1fr !important; }
+  /* minmax(0, …) so a long word cannot push the cards past the panel edge. */
+  .fluo-vocab-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .fluo-vocab-panel { padding: 20px 16px !important; }
+  /* Search takes its own row; Export and Add word share the next one. */
+  .fluo-vocab-tools { flex-wrap: wrap; width: 100%; }
+  .fluo-vocab-search { flex: 1 1 100%; }
+  .fluo-vocab-tools button { flex: 1 1 0; white-space: nowrap; }
   .fluo-two-col { grid-template-columns: 1fr !important; }
   .fluo-header { flex-wrap: wrap; gap: 14px; }
   /* The mic button pushed Send past the right edge on a 375px phone. */
@@ -23,6 +54,26 @@
   .fluo-answerrow button { padding-left: 16px !important; padding-right: 16px !important; }
   .fluo-mic { width: 44px !important; }
 }
+@keyframes fluo-sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .fluo-rail.is-open { animation: none; } }
+
+/* iPad landscape (about 1024–1366 wide, 768–1024 tall). The width is fine; the
+   height is not: header, tabs and the 600px-minimum practice panel pushed the
+   answer bar below the fold, so every answer started with a scroll. Tighten
+   the chrome and size the chat to what is left. Bounded by max-width so the
+   desktop layout is untouched. */
+@media (min-width: 761px) and (max-width: 1366px) and (max-height: 1024px) {
+  .fluo-page { padding: 16px 24px 20px !important; }
+  .fluo-stack { gap: 14px !important; }
+  .fluo-header { padding: 14px 24px !important; }
+  .fluo-practice { min-height: 0 !important; }
+  .fluo-rail { padding: 18px 20px !important; overflow-y: auto; max-height: calc(100vh - 204px); }
+  .fluo-chat { max-height: max(240px, calc(100vh - 364px)) !important; min-height: max(240px, calc(100vh - 364px)) !important; }
+}
+
+/* Touch screens have no hover, so the delete button on a word card was
+   unreachable on an iPad or a phone. */
+@media (hover: none) { .fluo-card-del { opacity: 0.7 !important; } }
 
 /* Hover affordances kept light so they read in both themes */
 .fluo-tab:hover span { opacity: 0.85; }
